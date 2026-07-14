@@ -3,8 +3,7 @@
 # to host-local. Front it with nginx + certbot for public TLS.
 services:
   thay-auth:
-    build: .
-    image: thay-auth:latest
+    image: ghcr.io/thaypley/thay-auth:latest
     container_name: thay-auth
     restart: unless-stopped
     env_file: .env
