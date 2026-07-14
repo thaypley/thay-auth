@@ -1,0 +1,27 @@
+# thay-auth — universal auth microservice. Hardened by default:
+# non-root, read-only rootfs, all caps dropped, capped RAM/CPU, published ONLY
+# to host-local. Front it with nginx + certbot for public TLS.
+services:
+  thay-auth:
+    build: .
+    image: thay-auth:latest
+    container_name: thay-auth
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # host-local only — never 0.0.0.0. nginx reverse-proxies a subdomain here.
+      - "127.0.0.1:3749:3749"
+    mem_limit: 256m
+    cpus: 0.25
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3749/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
