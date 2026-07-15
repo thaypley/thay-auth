@@ -1,6 +1,10 @@
 /**
  * thay-homebase — Main entry point.
+ * Import CSS through JS so Vite bundles/hashes them for production.
  */
+import './css/tokens.css';
+import './css/base.css';
+import './css/components.css';
 import { route, initRouter } from './router.js';
 import { hasToken } from './sdk.js';
 
