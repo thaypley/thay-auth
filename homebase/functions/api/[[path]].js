@@ -5,21 +5,21 @@
  * All /api/* calls from the frontend are proxied through this function
  * to the thay-auth Express server running on the Hostinger VPS.
  *
- * The VPS nginx routes /thauth/* → http://127.0.0.1:3749/* (thay-auth Docker)
- * Set AUTH_API_URL as an environment variable in CF Pages dashboard:
- *   AUTH_API_URL = https://thaypley.com/thauth
+ * 5.181.218.124 → nginx api.thaypley.com vhost → localhost:3749 (thay-auth)
+ * Set AUTH_API_URL as an environment variable in CF Pages dashboard to override:
+ *   AUTH_API_URL = http://api.thaypley.com
  */
 
 const AUTH_API = typeof AUTH_API_URL !== 'undefined'
   ? AUTH_API_URL
-  : 'https://thaypley.com/thauth';
+  : 'http://5.181.218.124';
 
 export async function onRequest(context) {
   const { request } = context;
   const url = new URL(request.url);
 
   // Rewrite /api/* to the auth backend (strip /api prefix)
-  // e.g. /api/auth/login → /thauth/auth/login on the VPS
+  // e.g. /api/auth/login → /auth/login on api.thaypley.com
   const backendPath = url.pathname.replace(/^\/api/, '') || '/';
   const target = new URL(backendPath + url.search, AUTH_API);
 
@@ -38,7 +38,7 @@ export async function onRequest(context) {
   }
 
   // Set forwarded headers so Express knows the original request
-  init.headers['Host'] = 'thaypley.com';
+  init.headers['Host'] = 'api.thaypley.com';
   init.headers['X-Forwarded-Proto'] = 'https';
   init.headers['X-Forwarded-Host'] = 'auth.thaypley.com';
 
