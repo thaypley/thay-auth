@@ -1,4 +1,4 @@
-import { ThayAuth } from '@thaypley/auth-sdk';
+import { ThayAuth } from './auth-sdk-lib.js';
 
 const STORAGE_TOKEN_KEY = 'thay_homebase_token';
 

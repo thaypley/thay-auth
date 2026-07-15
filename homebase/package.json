@@ -10,7 +10,6 @@
     "deploy": "wrangler pages deploy dist --project-name=thay-homebase"
   },
   "dependencies": {
-    "@thaypley/auth-sdk": "file:../sdk",
     "gsap": "^3.12.5"
   },
   "devDependencies": {
