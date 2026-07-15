@@ -1,5 +1,13 @@
 /* ─── thaypley Design Tokens ──────────────────────────────────── */
 
+@font-face {
+  font-family: 'STALPH';
+  src: url('/assets/fonts/STALPH.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Brand Colors */
   --pink-dark: #f177ae;

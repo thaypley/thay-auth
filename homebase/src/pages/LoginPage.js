@@ -10,12 +10,14 @@ import { pageTransition } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
 
 export default async function LoginPage(container) {
-  const email = h('input', {
+  const identity = h('input', {
     className: 'input',
-    type: 'email',
-    placeholder: 'email',
-    id: 'login-email',
-    autocomplete: 'email',
+    type: 'text',
+    placeholder: 'username or email',
+    id: 'login-identity',
+    autocomplete: 'username',
+    autocapitalize: 'none',
+    spellcheck: 'false',
     required: true,
   });
 
@@ -45,7 +47,7 @@ export default async function LoginPage(container) {
       errorEl.textContent = '';
 
       try {
-        const result = await auth.login(email.value, password.value);
+        const result = await auth.login(identity.value, password.value);
         setState({ user: result.user, profile: { ...result.user, characteristics: {} } });
         toast('Welcome back!', 'success');
         navigate('/');
@@ -58,8 +60,8 @@ export default async function LoginPage(container) {
     },
   }, [
     h('div', { className: 'input-group' }, [
-      h('label', { className: 'input-label', htmlFor: 'login-email' }, ['email']),
-      email,
+      h('label', { className: 'input-label', htmlFor: 'login-identity' }, ['username or email']),
+      identity,
     ]),
     h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
       h('label', { className: 'input-label', htmlFor: 'login-password' }, ['password']),
@@ -88,8 +90,8 @@ export default async function LoginPage(container) {
   const shell = h('div', {}, [NavBar(), page]);
   mount(container, shell);
 
-  // Focus email input
-  setTimeout(() => email.focus(), 100);
+  // Focus identity input
+  setTimeout(() => identity.focus(), 100);
 
   // Animation
   pageTransition(page);
