@@ -59,19 +59,31 @@
 ## 2026-07-15 — Session Handoff
 
 ### Completed
-- **nginx config rewritten cleanly** for `api.thaypley.com` (was garbled from bad heredoc). Config serves HTTP + HTTPS with TLS cert obtained via certbot (`/etc/letsencrypt/live/api.thaypley.com/`). `curl https://api.thaypley.com/auth/health` returns 200 from VPS direct.
-- **CF Pages function** (`homebase/functions/api/[[path]].js`) code updated to target HTTPS backend, header-stripping logic added, function pushed & `wrangler pages deploy` run.
+- **nginx config rewritten cleanly** for `api.thaypley.com`. TLS via certbot. `curl https://api.thaypley.com/auth/health` → 200.
+- **Proxy gap fixed**: removed CF Pages function (`homebase/functions/api/[[path]].js` — CF error 1003, blocked same-account fetch). Direct browser-to-API instead:
+  - SDK `baseUrl` set to `https://api.thaypley.com` in prod
+  - `CORS_ORIGINS` on VPS updated to include `https://auth.thaypley.com` — container restarted
+  - CORS preflight confirmed: `access-control-allow-origin` returns correct origin
+
+- **SDK inlined**: `@thaypley/auth-sdk` (file dep `../sdk`) removed; SDK dist copied to `homebase/src/auth-sdk-lib.js`. CF Pages build can't resolve `file:` deps.
+- **CF Pages build fixed**: build command changed `pnpm run build` → `npm run build` (project uses npm, not pnpm). Fresh deploy succeeded — `uses_functions: false`, `dist/` deployed to `auth.thaypley.com`.
+- **VPS deploy fixed**: cloned full git repo to `/docker/thay-auth` (was files-only, no `.git` — GH Actions `git pull` failed). Now git-aware.
+- **All pushed**: commits `6f11f5c` + `02de64f` on main. VPS at `02de64f`, container healthy, PB admin authed.
 
 ### Blockers
-- **CF Pages function cannot outbound-fetch the VPS**: returns `error code: 1003` (Cloudflare block). Occurs because Pages/Workers on `auth.thaypley.com` can't fetch domains/IPs associated with the same CF account — even with `api.thaypley.com` set to DNS-only (gray cloud). HTTP and HTTPS both fail identically. The SPA's `/api/*` → function → VPS proxy pattern is broken.
-- **Pending uncommitted changes** in `homebase/functions/api/[[path]].js` (header-strip + HTTPS target). Not pushed to main yet.
+- **GH Actions deploy** (`deploy.yml` → appleboy/ssh-action) still failure on last run — check logs for exact cause (likely fixed by git clone fix, but the retry run status isn't back yet). On-VPS manual deploy steps verified working.
 
-### Next Session (with CF MCP + GitHub MCP now available)
-- [ ] **Fix the proxy gap** — 3 viable approaches (pick one):
-  - **Cloudflare Tunnel** (`cloudflared` on VPS): creates a `*.trycloudflare.com` or custom tunnel that CF Pages can fetch internally. Cleanest within-CF-network solution.
-  - **Direct browser-to-API**: remove CF function, update `homebase/src/sdk.js` to set `baseUrl: 'https://api.thaypley.com'`, add `https://auth.thaypley.com` to VPS `.env` `CORS_ORIGINS`, restart container.
-  - **Use CF MCP to configure api.thaypley.com as a proxied origin**: set orange-cloud and point origin to VPS IP. Then use `AUTH_API_URL` env var in CF Pages dashboard instead of hardcoded URL. Might still hit same 1003 issue.
-- [ ] **Push clean commit** to main after fix is chosen, triggering GH Action deploy + CF Pages redeploy
-- [ ] **Verify end-to-end**: browser at `auth.thaypley.com` → signup/login flow hits real PB
+### Next Session
+- [ ] **Verify GH Actions deploy** passes on next push (git clone fix should resolve the previous `fatal: not a git repository` error)
+- [ ] **Wire SMTP_USER/SMTP_PASS** for Resend so verification emails actually send (currently no-op with warn-log)
+- [ ] **Binary-search PB versions** to fix admin `POST /api/collections/users/records` 400 bug, or finalize `DIRECT_SQL_USERS` path
+- [ ] **Verify signup end-to-end** with curl: invite-code → POST `/auth/signup` → user exists → verify email → POST `/auth/login` → JWT → POST `/devices/pair` → device token
+- [ ] **Wire `thaypley-tunes-desktop`** via device-token flow
 
----
+### Reference
+- SPA: `https://auth.thaypley.com` (CF Pages, no functions)
+- API: `https://api.thaypley.com` (nginx → 127.0.0.1:3749 → thay-auth container)
+- CORS origins: `https://thaypley.com,https://du.thaypley.com,https://fam.thaypley.com,https://werk.thaypley.com,https://auth.thaypley.com`
+- VPS: Hostinger VM 1477936, `ssh thaypley-vps` (root). Deploy: `/docker/thay-auth/`
+- Repo: `github.com/thaypley/thay-auth` (public, main)
+- CF Pages build: `npm run build` in `homebase/`, `dist/` output
