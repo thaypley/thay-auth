@@ -56,4 +56,22 @@
 - Local dev: PocketBase on `127.0.0.1:8091` (dev-only schema), Express on `127.0.0.1:3749`, both started via plain `nohup` — not yet under launchd/pm2, restart by hand.
 - Full narrative + all pivotal decisions: see the `project_thay_auth` memory entry.
 
+## 2026-07-15 — Session Handoff
+
+### Completed
+- **nginx config rewritten cleanly** for `api.thaypley.com` (was garbled from bad heredoc). Config serves HTTP + HTTPS with TLS cert obtained via certbot (`/etc/letsencrypt/live/api.thaypley.com/`). `curl https://api.thaypley.com/auth/health` returns 200 from VPS direct.
+- **CF Pages function** (`homebase/functions/api/[[path]].js`) code updated to target HTTPS backend, header-stripping logic added, function pushed & `wrangler pages deploy` run.
+
+### Blockers
+- **CF Pages function cannot outbound-fetch the VPS**: returns `error code: 1003` (Cloudflare block). Occurs because Pages/Workers on `auth.thaypley.com` can't fetch domains/IPs associated with the same CF account — even with `api.thaypley.com` set to DNS-only (gray cloud). HTTP and HTTPS both fail identically. The SPA's `/api/*` → function → VPS proxy pattern is broken.
+- **Pending uncommitted changes** in `homebase/functions/api/[[path]].js` (header-strip + HTTPS target). Not pushed to main yet.
+
+### Next Session (with CF MCP + GitHub MCP now available)
+- [ ] **Fix the proxy gap** — 3 viable approaches (pick one):
+  - **Cloudflare Tunnel** (`cloudflared` on VPS): creates a `*.trycloudflare.com` or custom tunnel that CF Pages can fetch internally. Cleanest within-CF-network solution.
+  - **Direct browser-to-API**: remove CF function, update `homebase/src/sdk.js` to set `baseUrl: 'https://api.thaypley.com'`, add `https://auth.thaypley.com` to VPS `.env` `CORS_ORIGINS`, restart container.
+  - **Use CF MCP to configure api.thaypley.com as a proxied origin**: set orange-cloud and point origin to VPS IP. Then use `AUTH_API_URL` env var in CF Pages dashboard instead of hardcoded URL. Might still hit same 1003 issue.
+- [ ] **Push clean commit** to main after fix is chosen, triggering GH Action deploy + CF Pages redeploy
+- [ ] **Verify end-to-end**: browser at `auth.thaypley.com` → signup/login flow hits real PB
+
 ---
