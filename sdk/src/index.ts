@@ -1,9 +1,10 @@
 import type {
-  ThayUser, AuthSession, DevicePairing, Device,
-  Session, SignupData, AuthStateListener,
+  ThayUser, UserProfile, AuthSession, DevicePairing, Device,
+  Session, SignupData, UserApp, ProfileUpdateData,
+  AuthStateListener,
 } from './types.js';
 
-export type { ThayUser, AuthSession, DevicePairing, Device, Session, SignupData };
+export type { ThayUser, UserProfile, AuthSession, DevicePairing, Device, Session, SignupData, UserApp, ProfileUpdateData };
 
 export class ThayAuth {
   private baseUrl: string;
@@ -21,6 +22,10 @@ export class ThayAuth {
 
   getUser(): ThayUser | null {
     return this.user;
+  }
+
+  setToken(token: string | null) {
+    this.token = token;
   }
 
   onAuthStateChange(listener: AuthStateListener): () => void {
@@ -60,6 +65,8 @@ export class ThayAuth {
 
     return data as T;
   }
+
+  // ─── Auth ──────────────────────────────────────────────────────────
 
   async login(identity: string, password: string): Promise<AuthSession> {
     const data = await this.request<AuthSession>('/auth/login', {
@@ -105,6 +112,69 @@ export class ThayAuth {
     return this.request<ThayUser>('/auth/me');
   }
 
+  // ─── Profile ───────────────────────────────────────────────────────
+
+  async getProfile(): Promise<UserProfile> {
+    return this.request<UserProfile>('/auth/profile');
+  }
+
+  async updateProfile(data: ProfileUpdateData): Promise<UserProfile> {
+    const result = await this.request<UserProfile>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    if (result.username) {
+      this.user = result;
+    }
+    return result;
+  }
+
+  // ─── Characteristics ───────────────────────────────────────────────
+
+  async getCharacteristics(): Promise<Record<string, string>> {
+    const data = await this.request<{ characteristics: Record<string, string> }>('/auth/profile/characteristics');
+    return data.characteristics;
+  }
+
+  async setCharacteristics(characteristics: Record<string, string>): Promise<Record<string, string>> {
+    const data = await this.request<{ characteristics: Record<string, string> }>('/auth/profile/characteristics', {
+      method: 'PUT',
+      body: JSON.stringify({ characteristics }),
+    });
+    return data.characteristics;
+  }
+
+  // ─── Username ──────────────────────────────────────────────────────
+
+  async checkUsername(username: string): Promise<{ available: boolean; error?: string }> {
+    return this.request(`/auth/check-username?username=${encodeURIComponent(username)}`);
+  }
+
+  async changeUsername(username: string): Promise<{ user: ThayUser }> {
+    return this.request('/auth/change-username', {
+      method: 'POST',
+      body: JSON.stringify({ username }),
+    });
+  }
+
+  // ─── Invite & Waitlist ─────────────────────────────────────────────
+
+  async checkInviteCode(code: string): Promise<{ valid: boolean; error?: string }> {
+    return this.request('/auth/check-invite', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async joinWaitlist(email: string, note?: string, source?: string): Promise<{ success: boolean; id?: string; message: string }> {
+    return this.request('/auth/waitlist', {
+      method: 'POST',
+      body: JSON.stringify({ email, note: note || '', source: source || 'homebase' }),
+    });
+  }
+
+  // ─── Email Verification ────────────────────────────────────────────
+
   async sendVerificationEmail(): Promise<void> {
     await this.request('/auth/send-verification', { method: 'POST' });
   }
@@ -123,12 +193,26 @@ export class ThayAuth {
     });
   }
 
-  async checkInviteCode(code: string): Promise<{ valid: boolean; error?: string }> {
-    return this.request('/auth/check-invite', {
-      method: 'POST',
-      body: JSON.stringify({ code }),
-    });
+  // ─── Apps ──────────────────────────────────────────────────────────
+
+  async getApps(): Promise<UserApp[]> {
+    const data = await this.request<{ apps: UserApp[] }>('/auth/apps');
+    return data.apps;
   }
+
+  async registerApp(appId: string, appName?: string, installedVersion?: string, autoUpdate?: boolean): Promise<UserApp> {
+    const data = await this.request<{ app: UserApp }>('/auth/apps', {
+      method: 'POST',
+      body: JSON.stringify({ appId, appName, installedVersion, autoUpdate }),
+    });
+    return data.app;
+  }
+
+  async uninstallApp(appId: string): Promise<void> {
+    await this.request(`/auth/apps/${encodeURIComponent(appId)}`, { method: 'DELETE' });
+  }
+
+  // ─── Devices ───────────────────────────────────────────────────────
 
   async pairDevice(label: string, scopes?: string[]): Promise<DevicePairing> {
     return this.request<DevicePairing>('/devices/pair', {
@@ -156,6 +240,8 @@ export class ThayAuth {
     });
   }
 
+  // ─── Sessions ──────────────────────────────────────────────────────
+
   async listSessions(): Promise<Session[]> {
     const data = await this.request<{ sessions: Session[] }>('/sessions');
     return data.sessions;
@@ -164,6 +250,8 @@ export class ThayAuth {
   async revokeSession(sessionId: string): Promise<void> {
     await this.request(`/sessions/${sessionId}`, { method: 'DELETE' });
   }
+
+  // ─── Health ────────────────────────────────────────────────────────
 
   async healthCheck(): Promise<{ status: string }> {
     return this.request('/auth/health');

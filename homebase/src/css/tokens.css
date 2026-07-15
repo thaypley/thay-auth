@@ -1,0 +1,86 @@
+/* ─── thaypley Design Tokens ──────────────────────────────────── */
+
+:root {
+  /* Brand Colors */
+  --pink-dark: #f177ae;
+  --pink-med: #f494be;
+  --pink-light: #f0cbd9;
+  --yellow: #fad448;
+  --yellow-deep: #f0c120;
+  --blue: #6581b8;
+  --blue-light: #9baad1;
+  --black: #231F20;
+  --white: #ffffff;
+  --off-white: #fefefe;
+
+  /* Surface */
+  --surface: #fefefe;
+  --surface-hover: #fef4f8;
+  --surface-muted: #f8f8f8;
+
+  /* Semantic */
+  --success: #2ecc71;
+  --warning: #e09a2b;
+  --danger: #e63946;
+  --info: #6581b8;
+
+  /* Glass */
+  --glass-bg: rgba(255, 255, 255, 0.15);
+  --glass-bg-strong: rgba(255, 255, 255, 0.25);
+  --glass-border: rgba(255, 255, 255, 0.25);
+  --glass-border-strong: rgba(255, 255, 255, 0.4);
+  --glass-shadow: 0 8px 32px rgba(241, 119, 174, 0.1);
+  --glass-shadow-lg: 0 16px 48px rgba(241, 119, 174, 0.12);
+  --glass-blur: blur(16px);
+
+  /* Gradient */
+  --gradient-pink: linear-gradient(135deg, #f177ae, #f494be);
+  --gradient-pink-yellow: linear-gradient(135deg, #f177ae, #fad448);
+  --gradient-blue: linear-gradient(135deg, #6581b8, #9baad1);
+
+  /* Typography */
+  --font-display: 'STALPH', 'Space Mono', monospace;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', monospace;
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-base: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+  --font-size-4xl: 2.5rem;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 64px;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(35, 31, 32, 0.06);
+  --shadow-md: 0 4px 16px rgba(35, 31, 32, 0.08);
+  --shadow-lg: 0 8px 32px rgba(35, 31, 32, 0.1);
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+  --duration-glacial: 600ms;
+
+  /* Layout */
+  --max-width: 1200px;
+  --navbar-height: 64px;
+}

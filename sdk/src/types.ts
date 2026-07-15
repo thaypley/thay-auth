@@ -11,6 +11,10 @@ export interface ThayUser {
   updated: string;
 }
 
+export interface UserProfile extends ThayUser {
+  characteristics: Record<string, string>;
+}
+
 export interface AuthSession {
   user: ThayUser;
   token: string;
@@ -54,6 +58,29 @@ export interface SignupData {
   accountType: string;
   birthday: string;
   inviteCode: string;
+}
+
+export interface UserApp {
+  id: string;
+  appId: string;
+  appName: string;
+  installedVersion: string;
+  latestVersion: string;
+  autoUpdate: boolean;
+  status: string;
+  installedAt: string;
+  lastUpdatedAt: string;
+}
+
+export interface ProfileUpdateData {
+  username?: string;
+  characteristics?: Record<string, string>;
+}
+
+export interface WaitlistData {
+  email: string;
+  note?: string;
+  source?: string;
 }
 
 export type AuthStateListener = (user: ThayUser | null) => void;

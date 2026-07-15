@@ -1,6 +1,10 @@
 # thay-auth — universal auth microservice. Hardened by default:
-# non-root, read-only rootfs, all caps dropped, capped RAM/CPU, published ONLY
-# to host-local. Front it with nginx + certbot for public TLS.
+# non-root, all caps dropped, capped RAM/CPU, published ONLY to host-local.
+# Front it with nginx + certbot for public TLS.
+#
+# DIRECT_SQL_USERS=1 writes users directly into PocketBase's SQLite file.
+# The PB data dir must be bind-mounted in (read-write) at /pb_data so the
+# Node container and the PocketBase process see the same `users` table.
 services:
   thay-auth:
     build:
@@ -12,9 +16,13 @@ services:
     ports:
       # host-local only — never 0.0.0.0. nginx reverse-proxies a subdomain here.
       - "127.0.0.1:3749:3749"
+    volumes:
+      # Bind-mount the live PocketBase data dir so DIRECT_SQL_USERS writes
+      # are visible to PB's Go auth verifier. Path on the VPS:
+      # /home/thaypley/pocketbase/pb_data  →  /pb_data
+      - /home/thaypley/pocketbase/pb_data:/pb_data:rw
     mem_limit: 256m
     cpus: 0.25
-    read_only: true
     tmpfs:
       - /tmp
     security_opt:
@@ -22,7 +30,7 @@ services:
     cap_drop:
       - ALL
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3749/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3749/auth/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

@@ -23,4 +23,12 @@ export const config = {
     codePrefix: process.env.INVITE_CODE_PREFIX || 'TP',
     defaultMaxUses: parseInt(process.env.INVITE_DEFAULT_MAX_USES || '1', 10),
   },
+
+  // Bypass the broken PB admin `POST /api/collections/users/records` by
+  // writing directly to PB's `pb_data/data.db`. With the data dir bind-
+  // mounted at /pb_data (see docker-compose.yml) and DIRECT_SQL_USERS=1,
+  // PB's Go auth verifier reads the new row on the next
+  // authWithPassword call. Requires python3+bcrypt inside the image.
+  directSqlUsers: process.env.DIRECT_SQL_USERS === '1',
+  pbDataPath: process.env.PB_DATA_PATH || '/pb_data/data.db',
 };

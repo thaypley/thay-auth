@@ -1,0 +1,51 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-thay-auth
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH into VPS and deploy
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+            cd /docker/thay-auth
+
+            # 1. Pull latest
+            git pull --ff-only origin main
+
+            # 2. Make PB data dir writable by the in-container 'node' uid (1000)
+            #    so DIRECT_SQL_USERS can write new user rows to PB's sqlite.
+            chown -R 1000:1000 /home/thaypley/pocketbase/pb_data
+
+            # 3. Build + restart
+            docker compose build
+            docker compose up -d
+
+            # 4. Wait for healthy
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              status=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
+              if [ "$status" = "healthy" ]; then
+                echo "thay-auth is healthy after ${i}0s"
+                break
+              fi
+              sleep 10
+            done
+
+            # 5. Tail last 40 lines of build/deploy log on failure
+            docker compose ps
+            docker compose logs --tail=40 thay-auth || true

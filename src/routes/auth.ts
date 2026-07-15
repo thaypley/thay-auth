@@ -1,12 +1,18 @@
 import { Router, Request, Response } from 'express';
 import { createClient, getAdminPb } from '../providers/pocketbase.js';
+import { createUserDirect } from '../providers/directSqlUsers.js';
 import { requireUser } from '../middleware/requireAuth.js';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import {
   validateEmail, validatePassword, validateUsername,
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
+
+const VALID_CHARACTERISTIC_KEYS = ['bio', 'pronouns', 'astral_sign'];
+const PRONOUN_VALUES = ['they/them', 'she/her', 'he/him', 'xe/xem', 'ze/zir', 'any', 'ask'];
+const ASTRAL_SIGN_VALUES = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces', 'unknown'];
 
 const router = Router();
 
@@ -37,6 +43,8 @@ function sanitizeUser(record: Record<string, unknown>) {
     updated: record.updated,
   };
 }
+
+// ─── Invite ────────────────────────────────────────────────────────
 
 router.post('/check-invite', async (req: Request, res: Response) => {
   try {
@@ -71,6 +79,33 @@ router.post('/check-invite', async (req: Request, res: Response) => {
     return res.status(500).json({ valid: false, error: 'Internal error' });
   }
 });
+
+// ─── Waitlist ──────────────────────────────────────────────────────
+
+router.post('/waitlist', async (req: Request, res: Response) => {
+  try {
+    const { email, note, source } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    const pb = await getAdminPb();
+    const record = await pb.collection('signup_waitlist').create({
+      email: email.toLowerCase().trim(),
+      note: note || '',
+      source: source || 'homebase',
+    });
+
+    return res.status(201).json({ success: true, id: record.id, message: 'You have been added to the waitlist.' });
+  } catch (err: unknown) {
+    const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to join waitlist';
+    if (msg.includes('unique') || msg.includes('already')) {
+      return res.status(200).json({ success: true, message: 'This email is already on the waitlist.' });
+    }
+    logger.error('waitlist error:', err);
+    return res.status(500).json({ error: 'Failed to join waitlist' });
+  }
+});
+
+// ─── Signup ────────────────────────────────────────────────────────
 
 router.post('/signup', async (req: Request, res: Response) => {
   try {
@@ -115,23 +150,39 @@ router.post('/signup', async (req: Request, res: Response) => {
     const monthDiff = new Date().getMonth() - birthDate.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && new Date().getDate() < birthDate.getDate())) age--;
 
-    const user = await pb.collection('users').create({
-      email: normalizedEmail,
-      password,
-      passwordConfirm: password,
-      username: sanitizedUsername,
-      accountType,
-      birthday: birthday,
-      age,
-      isVerified: false,
-      tier: 'free',
-    });
+    let userId: string;
+    if (config.directSqlUsers) {
+      const created = await createUserDirect(config.pbDataPath, {
+        email: normalizedEmail,
+        password,
+        username: sanitizedUsername,
+        accountType,
+        birthday,
+        age,
+        isVerified: false,
+        tier: 'free',
+      });
+      userId = created.id;
+    } else {
+      const created = await pb.collection('users').create({
+        email: normalizedEmail,
+        password,
+        passwordConfirm: password,
+        username: sanitizedUsername,
+        accountType,
+        birthday: birthday,
+        age,
+        isVerified: false,
+        tier: 'free',
+      });
+      userId = (created as unknown as Record<string, string>).id;
+    }
 
     try {
       await pb.collection('signup_invites').update(invite.id as string, {
         useCount: useCount + 1,
         used: useCount + 1 >= maxUses,
-        usedBy: user.id,
+        usedBy: userId,
         usedAt: new Date().toISOString(),
       });
     } catch (redeemErr) {
@@ -141,7 +192,7 @@ router.post('/signup', async (req: Request, res: Response) => {
     const userPb = createClient();
     const authData = await userPb.collection('users').authWithPassword(normalizedEmail, password);
 
-    logger.info(`User signed up: ${user.id} (${sanitizedUsername})`);
+    logger.info(`User signed up: ${userId} (${sanitizedUsername})${config.directSqlUsers ? ' [direct-sql]' : ''}`);
 
     return res.status(201).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
@@ -153,6 +204,8 @@ router.post('/signup', async (req: Request, res: Response) => {
     return res.status(400).json({ error: msg });
   }
 });
+
+// ─── Login ─────────────────────────────────────────────────────────
 
 router.post('/login', async (req: Request, res: Response) => {
   try {
@@ -184,6 +237,8 @@ router.post('/login', async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 });
+
+// ─── Session Management ────────────────────────────────────────────
 
 router.post('/logout', requireUser, async (req: Request, res: Response) => {
   try {
@@ -218,6 +273,8 @@ router.post('/refresh', requireUser, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Token refresh failed' });
   }
 });
+
+// ─── Email Verification ────────────────────────────────────────────
 
 router.post('/send-verification', requireUser, async (req: Request, res: Response) => {
   try {
@@ -273,6 +330,8 @@ router.post('/verify-email', requireUser, async (req: Request, res: Response) =>
   }
 });
 
+// ─── Username Change ───────────────────────────────────────────────
+
 const USERNAME_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
 router.post('/change-username', requireUser, async (req: Request, res: Response) => {
@@ -307,6 +366,28 @@ router.post('/change-username', requireUser, async (req: Request, res: Response)
   }
 });
 
+// ─── Check Username Availability ────────────────────────────────────
+
+router.get('/check-username', async (req: Request, res: Response) => {
+  try {
+    const username = req.query.username as string;
+    if (!username) return res.status(400).json({ error: 'username query param required' });
+    const err = validateUsername(username);
+    if (err) return res.status(200).json({ available: false, error: err });
+
+    const pb = await getAdminPb();
+    const result = await pb.collection('users').getList(1, 1, {
+      filter: `username="${sanitizeUsername(username)}"`,
+    });
+    return res.status(200).json({ available: result.items.length === 0 });
+  } catch (err) {
+    logger.error('check-username error:', err);
+    return res.status(500).json({ error: 'Failed to check username' });
+  }
+});
+
+// ─── Password Reset ────────────────────────────────────────────────
+
 router.post('/request-password-reset', async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
@@ -326,6 +407,260 @@ router.post('/request-password-reset', async (req: Request, res: Response) => {
     });
   }
 });
+
+// ─── Profile (full user + characteristics) ──────────────────────────
+
+router.get('/profile', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const user = await pb.collection('users').getOne(req.user!.id);
+    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+      filter: `userId="${req.user!.id}"`,
+    });
+
+    const characteristics: Record<string, string> = {};
+    for (const c of chars.items) {
+      const rec = c as unknown as Record<string, string>;
+      characteristics[rec.key] = rec.value;
+    }
+
+    return res.status(200).json({
+      ...sanitizeUser(user as unknown as Record<string, unknown>),
+      characteristics,
+    });
+  } catch (err) {
+    logger.error('/profile GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+router.patch('/profile', requireUser, async (req: Request, res: Response) => {
+  try {
+    const { characteristics } = req.body;
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+
+    // Upsert characteristics
+    if (characteristics && typeof characteristics === 'object') {
+      for (const [key, value] of Object.entries(characteristics)) {
+        if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
+        const strVal = String(value).trim();
+
+        // Validation
+        if (key === 'pronouns' && strVal && !PRONOUN_VALUES.includes(strVal)) {
+          return res.status(400).json({ error: `Invalid pronoun value. Valid: ${PRONOUN_VALUES.join(', ')}` });
+        }
+        if (key === 'astral_sign' && strVal && !ASTRAL_SIGN_VALUES.includes(strVal.toLowerCase())) {
+          return res.status(400).json({ error: `Invalid astral sign. Valid: ${ASTRAL_SIGN_VALUES.join(', ')}` });
+        }
+        if (key === 'bio' && strVal.length > 280) {
+          return res.status(400).json({ error: 'Bio must be 280 characters or fewer' });
+        }
+
+        const existing = await pb.collection('user_characteristics').getList(1, 1, {
+          filter: `userId="${userId}" && key="${key}"`,
+        });
+
+        if (existing.items.length > 0) {
+          await pb.collection('user_characteristics').update(existing.items[0].id, {
+            value: strVal,
+          });
+        } else {
+          await pb.collection('user_characteristics').create({
+            userId,
+            key,
+            value: strVal,
+            visibility: 'public',
+          });
+        }
+      }
+    }
+
+    // Fetch updated profile
+    const user = await pb.collection('users').getOne(userId);
+    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+      filter: `userId="${userId}"`,
+    });
+    const charMap: Record<string, string> = {};
+    for (const c of chars.items) {
+      const rec = c as unknown as Record<string, string>;
+      charMap[rec.key] = rec.value;
+    }
+
+    return res.status(200).json({
+      ...sanitizeUser(user as unknown as Record<string, unknown>),
+      characteristics: charMap,
+    });
+  } catch (err) {
+    logger.error('/profile PATCH error:', err);
+    const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to update profile';
+    return res.status(400).json({ error: msg });
+  }
+});
+
+// ─── Characteristics CRUD ──────────────────────────────────────────
+
+router.get('/profile/characteristics', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+      filter: `userId="${req.user!.id}"`,
+    });
+    const map: Record<string, string> = {};
+    for (const c of chars.items) {
+      const rec = c as unknown as Record<string, string>;
+      map[rec.key] = rec.value;
+    }
+    return res.status(200).json({ characteristics: map });
+  } catch (err) {
+    logger.error('/profile/characteristics GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch characteristics' });
+  }
+});
+
+router.put('/profile/characteristics', requireUser, async (req: Request, res: Response) => {
+  try {
+    const { characteristics } = req.body;
+    if (!characteristics || typeof characteristics !== 'object') {
+      return res.status(400).json({ error: 'characteristics object required' });
+    }
+
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+
+    // Delete existing
+    const existing = await pb.collection('user_characteristics').getList(1, 200, {
+      filter: `userId="${userId}"`,
+    });
+    for (const c of existing.items) {
+      await pb.collection('user_characteristics').delete(c.id);
+    }
+
+    // Insert new
+    for (const [key, value] of Object.entries(characteristics)) {
+      if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
+      const strVal = String(value).trim();
+      if (!strVal) continue;
+
+      if (key === 'pronouns' && !PRONOUN_VALUES.includes(strVal)) continue;
+      if (key === 'astral_sign' && !ASTRAL_SIGN_VALUES.includes(strVal.toLowerCase())) continue;
+      if (key === 'bio' && strVal.length > 280) continue;
+
+      await pb.collection('user_characteristics').create({
+        userId,
+        key,
+        value: strVal,
+        visibility: 'public',
+      });
+    }
+
+    const map: Record<string, string> = {};
+    for (const [key, value] of Object.entries(characteristics)) {
+      if (VALID_CHARACTERISTIC_KEYS.includes(key)) {
+        map[key] = String(value).trim();
+      }
+    }
+
+    return res.status(200).json({ characteristics: map });
+  } catch (err) {
+    logger.error('/profile/characteristics PUT error:', err);
+    return res.status(500).json({ error: 'Failed to update characteristics' });
+  }
+});
+
+// ─── Apps Management ───────────────────────────────────────────────
+
+router.get('/apps', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const apps = await pb.collection('user_apps').getList(1, 100, {
+      filter: `userId="${req.user!.id}"`,
+      sort: '-installedAt',
+    });
+    return res.status(200).json({
+      apps: apps.items.map((a: unknown) => {
+        const rec = a as Record<string, unknown>;
+        return {
+          id: rec.id,
+          appId: rec.appId,
+          appName: rec.appName,
+          installedVersion: rec.installedVersion,
+          latestVersion: rec.latestVersion,
+          autoUpdate: rec.autoUpdate,
+          status: rec.status || 'installed',
+          installedAt: rec.installedAt,
+          lastUpdatedAt: rec.lastUpdatedAt,
+        };
+      }),
+    });
+  } catch (err) {
+    logger.error('/apps GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch apps' });
+  }
+});
+
+router.post('/apps', requireUser, async (req: Request, res: Response) => {
+  try {
+    const { appId, appName, installedVersion, autoUpdate } = req.body;
+    if (!appId) return res.status(400).json({ error: 'appId is required' });
+
+    const pb = await getAdminPb();
+    const existing = await pb.collection('user_apps').getList(1, 1, {
+      filter: `userId="${req.user!.id}" && appId="${appId}"`,
+    });
+
+    if (existing.items.length > 0) {
+      const updated = await pb.collection('user_apps').update(existing.items[0].id, {
+        installedVersion: installedVersion || existing.items[0].installedVersion,
+        appName: appName || existing.items[0].appName,
+        autoUpdate: autoUpdate !== undefined ? autoUpdate : existing.items[0].autoUpdate,
+        lastUpdatedAt: new Date().toISOString(),
+        status: 'installed',
+      });
+      return res.status(200).json({ app: updated });
+    }
+
+    const created = await pb.collection('user_apps').create({
+      userId: req.user!.id,
+      appId,
+      appName: appName || appId,
+      installedVersion: installedVersion || '1.0.0',
+      autoUpdate: autoUpdate !== undefined ? autoUpdate : true,
+      installedAt: new Date().toISOString(),
+      status: 'installed',
+    });
+
+    return res.status(201).json({ app: created });
+  } catch (err) {
+    logger.error('/apps POST error:', err);
+    return res.status(400).json({ error: 'Failed to register app' });
+  }
+});
+
+router.delete('/apps/:appId', requireUser, async (req: Request, res: Response) => {
+  try {
+    const { appId } = req.params;
+    const pb = await getAdminPb();
+    const existing = await pb.collection('user_apps').getList(1, 1, {
+      filter: `userId="${req.user!.id}" && appId="${appId}"`,
+    });
+
+    if (existing.items.length === 0) {
+      return res.status(404).json({ error: 'App not found' });
+    }
+
+    await pb.collection('user_apps').update(existing.items[0].id, {
+      status: 'uninstalled',
+    });
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    logger.error('/apps DELETE error:', err);
+    return res.status(500).json({ error: 'Failed to uninstall app' });
+  }
+});
+
+// ─── Health ────────────────────────────────────────────────────────
 
 router.get('/health', async (_req: Request, res: Response) => {
   try {

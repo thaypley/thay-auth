@@ -1,7 +1,15 @@
 node_modules/
 dist/
+sdk/dist/
+sdk/node_modules/
 .env
+.env.*
+!.env.example
 pocketbase
 pb_data/
 *.log
 .DS_Store
+.vscode/
+.idea/
+coverage/
+
