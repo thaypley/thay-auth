@@ -64,14 +64,11 @@
   - SDK `baseUrl` set to `https://api.thaypley.com` in prod
   - `CORS_ORIGINS` on VPS updated to include `https://auth.thaypley.com` — container restarted
   - CORS preflight confirmed: `access-control-allow-origin` returns correct origin
-
 - **SDK inlined**: `@thaypley/auth-sdk` (file dep `../sdk`) removed; SDK dist copied to `homebase/src/auth-sdk-lib.js`. CF Pages build can't resolve `file:` deps.
 - **CF Pages build fixed**: build command changed `pnpm run build` → `npm run build` (project uses npm, not pnpm). Fresh deploy succeeded — `uses_functions: false`, `dist/` deployed to `auth.thaypley.com`.
 - **VPS deploy fixed**: cloned full git repo to `/docker/thay-auth` (was files-only, no `.git` — GH Actions `git pull` failed). Now git-aware.
-- **All pushed**: commits `6f11f5c` + `02de64f` on main. VPS at `02de64f`, container healthy, PB admin authed.
-
-### Blockers
-- **GH Actions deploy** (`deploy.yml` → appleboy/ssh-action) still failure on last run — check logs for exact cause (likely fixed by git clone fix, but the retry run status isn't back yet). On-VPS manual deploy steps verified working.
+- **GH Actions secrets restored**: `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` were empty/missing. Set via `gh secret set`. Deploy run `29408797365` → `conclusion=success`.
+- **All pushed**: commits `6f11f5c` `02de64f` `dd9328a` on main. VPS at `dd9328a`, container healthy, PB admin authed. GH Actions deploy green.
 
 ### Next Session
 - [ ] **Verify GH Actions deploy** passes on next push (git clone fix should resolve the previous `fatal: not a git repository` error)
