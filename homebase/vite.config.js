@@ -7,6 +7,10 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2022',
+    // Vite's preload helper injects <link rel="modulepreload" crossorigin> at
+    // runtime; Chromium never fires load on same-origin CORS preloads here, so
+    // dynamic import() awaits forever (infinite spinner). Disable entirely.
+    modulePreload: false,
     minify: 'esbuild',
     sourcemap: false,
     rollupOptions: {

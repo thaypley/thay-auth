@@ -8,13 +8,15 @@ import './css/components.css';
 import { route, initRouter } from './router.js';
 import { hasToken } from './sdk.js';
 
-// Lazy load pages
-const LoginPage = () => import('./pages/LoginPage.js').then(m => m.default);
-const SignupPage = () => import('./pages/SignupPage.js').then(m => m.default);
-const WaitlistPage = () => import('./pages/WaitlistPage.js').then(m => m.default);
-const DashboardPage = () => import('./pages/DashboardPage.js').then(m => m.default);
-const ProfilePage = () => import('./pages/ProfilePage.js').then(m => m.default);
-const NotFoundPage = () => import('./pages/NotFoundPage.js').then(m => m.default);
+// Lazy load pages — each returns an async page fn that loads the chunk,
+// then renders into the container (previously the loaded fn was never called).
+const lazy = (load) => async (...args) => (await load()).default(...args);
+const LoginPage = lazy(() => import('./pages/LoginPage.js'));
+const SignupPage = lazy(() => import('./pages/SignupPage.js'));
+const WaitlistPage = lazy(() => import('./pages/WaitlistPage.js'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage.js'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
 
 // ─── Route Definitions ───────────────────────────────────────────
 
