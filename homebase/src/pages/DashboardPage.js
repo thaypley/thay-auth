@@ -33,6 +33,10 @@ export default async function DashboardPage(container) {
   }
 
   const profile = state.profile;
+  if (profile && !profile.isVerified) {
+    navigate('/verify', true);
+    return;
+  }
   const apps = state.apps || [];
   const devices = state.devices || [];
 

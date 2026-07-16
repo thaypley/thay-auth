@@ -14,7 +14,8 @@ app.use(cors({
   origin: config.corsOrigins,
   credentials: true,
 }));
-app.use(express.json({ limit: '1mb' }));
+// 6mb ceiling: /auth/avatar receives base64-encoded images (~4mb file → ~5.3mb JSON)
+app.use(express.json({ limit: '6mb' }));
 
 app.use('/auth', authRouter);
 app.use('/devices', devicesRouter);

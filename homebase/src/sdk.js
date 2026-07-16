@@ -40,6 +40,13 @@ auth.refreshSession = async () => {
   return result;
 };
 
+// Persist a token obtained outside the normal login/signup path
+// (e.g. the EMAIL_NOT_VERIFIED 403 hands one back for the verify flow).
+export function saveToken(token) {
+  localStorage.setItem(STORAGE_TOKEN_KEY, token);
+  auth.setToken(token);
+}
+
 export function clearToken() {
   localStorage.removeItem(STORAGE_TOKEN_KEY);
   auth.setToken(null);

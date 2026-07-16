@@ -2,7 +2,7 @@
  * Login page — embedded auth form.
  */
 import { h, mount } from '../utils/dom.js';
-import auth from '../sdk.js';
+import auth, { saveToken } from '../sdk.js';
 import { navigate } from '../router.js';
 import { setState } from '../store.js';
 import { toast } from '../utils/toast.js';
@@ -52,6 +52,14 @@ export default async function LoginPage(container) {
         toast('Welcome back!', 'success');
         navigate('/');
       } catch (err) {
+        if (err.code === 'EMAIL_NOT_VERIFIED' && err.data?.token) {
+          // Password was right — park the token and route into verification
+          saveToken(err.data.token);
+          setState({ user: err.data.user });
+          toast('One more step: verify your email', 'info');
+          navigate('/verify');
+          return;
+        }
         errorEl.textContent = err.message || 'Login failed';
       } finally {
         submitBtn.disabled = false;

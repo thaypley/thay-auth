@@ -29,6 +29,14 @@ function generateToken(): string {
   return result;
 }
 
+function avatarUrl(record: Record<string, unknown>): string {
+  const filename = record.avatar as string;
+  if (!filename) return '';
+  // Already a full URL (legacy rows on the shared users collection)
+  if (/^https?:\/\//.test(filename)) return filename;
+  return `${config.pbPublicUrl}/api/files/users/${record.id}/${filename}`;
+}
+
 function sanitizeUser(record: Record<string, unknown>) {
   return {
     id: record.id,
@@ -38,7 +46,8 @@ function sanitizeUser(record: Record<string, unknown>) {
     isVerified: record.isVerified || false,
     isArchitect: record.isArchitect || false,
     tier: record.tier || 'free',
-    avatar: record.avatar || '',
+    avatar: avatarUrl(record),
+    birthday: record.birthday || '',
     created: record.created,
     updated: record.updated,
   };
@@ -214,15 +223,34 @@ router.post('/login', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'identity and password are required' });
     }
 
+    // PB's identityFields only include email; resolve usernames ourselves.
+    let loginIdentity = identity.toLowerCase().trim();
+    if (!loginIdentity.includes('@') && /^[a-z0-9_]{3,20}$/.test(loginIdentity)) {
+      try {
+        const adminPb = await getAdminPb();
+        const match = await adminPb.collection('users').getList(1, 1, {
+          filter: `username="${loginIdentity}"`,
+        });
+        if (match.items.length > 0) {
+          loginIdentity = (match.items[0] as unknown as Record<string, string>).email;
+        }
+      } catch { /* fall through to authWithPassword with the raw identity */ }
+    }
+
     const pb = createClient();
-    const authData = await pb.collection('users').authWithPassword(
-      identity.toLowerCase().trim(),
-      password,
-    );
+    const authData = await pb.collection('users').authWithPassword(loginIdentity, password);
 
     const record = authData.record as unknown as Record<string, unknown>;
     if (!record.isVerified) {
-      return res.status(403).json({ error: 'Email not verified', code: 'EMAIL_NOT_VERIFIED' });
+      // Password already matched — hand back the token so the client can
+      // complete verification (/send-verification + /verify-email) without
+      // being locked out of the flow entirely.
+      return res.status(403).json({
+        error: 'Email not verified',
+        code: 'EMAIL_NOT_VERIFIED',
+        token: authData.token,
+        user: sanitizeUser(record),
+      });
     }
 
     logger.info(`User logged in: ${authData.record.id} (${record.username})`);
@@ -363,6 +391,62 @@ router.post('/change-username', requireUser, async (req: Request, res: Response)
     logger.error('change-username error:', err);
     const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to change username';
     return res.status(400).json({ error: msg });
+  }
+});
+
+// ─── Avatar Upload ─────────────────────────────────────────────────
+
+const AVATAR_MIME_TYPES: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+const AVATAR_MAX_BYTES = 4 * 1024 * 1024;
+
+router.post('/avatar', requireUser, async (req: Request, res: Response) => {
+  try {
+    const { data, contentType } = req.body || {};
+    if (typeof data !== 'string' || !data) {
+      return res.status(400).json({ error: 'data (base64 image) is required' });
+    }
+    const ext = AVATAR_MIME_TYPES[contentType];
+    if (!ext) {
+      return res.status(400).json({ error: `contentType must be one of: ${Object.keys(AVATAR_MIME_TYPES).join(', ')}` });
+    }
+
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(data.replace(/^data:[^;]+;base64,/, ''), 'base64');
+    } catch {
+      return res.status(400).json({ error: 'Invalid base64 data' });
+    }
+    if (bytes.length === 0) return res.status(400).json({ error: 'Empty image' });
+    if (bytes.length > AVATAR_MAX_BYTES) {
+      return res.status(400).json({ error: 'Avatar must be 4MB or smaller' });
+    }
+
+    const pb = await getAdminPb();
+    const form = new FormData();
+    form.append('avatar', new Blob([new Uint8Array(bytes)], { type: contentType }), `avatar.${ext}`);
+    const updated = await pb.collection('users').update(req.user!.id, form);
+
+    return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
+  } catch (err: unknown) {
+    logger.error('avatar upload error:', err);
+    const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to upload avatar';
+    return res.status(400).json({ error: msg });
+  }
+});
+
+router.delete('/avatar', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const updated = await pb.collection('users').update(req.user!.id, { avatar: null });
+    return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
+  } catch (err) {
+    logger.error('avatar delete error:', err);
+    return res.status(400).json({ error: 'Failed to remove avatar' });
   }
 });
 

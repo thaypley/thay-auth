@@ -9,6 +9,9 @@ export class ThayAuth {
     getToken() {
         return this.token;
     }
+    setToken(token) {
+        this.token = token || null;
+    }
     getUser() {
         return this.user;
     }
@@ -38,7 +41,11 @@ export class ThayAuth {
         });
         const data = await res.json();
         if (!res.ok) {
-            throw new Error(data.error || `Request failed: ${res.status}`);
+            const err = new Error(data.error || `Request failed: ${res.status}`);
+            err.status = res.status;
+            err.code = data.code;
+            err.data = data;
+            throw err;
         }
         return data;
     }
@@ -134,5 +141,48 @@ export class ThayAuth {
     }
     async healthCheck() {
         return this.request('/auth/health');
+    }
+    async getProfile() {
+        return this.request('/auth/profile');
+    }
+    async updateProfile(update) {
+        return this.request('/auth/profile', {
+            method: 'PATCH',
+            body: JSON.stringify(update),
+        });
+    }
+    async setCharacteristics(characteristics) {
+        return this.request('/auth/profile/characteristics', {
+            method: 'PUT',
+            body: JSON.stringify({ characteristics }),
+        });
+    }
+    async changeUsername(username) {
+        return this.request('/auth/change-username', {
+            method: 'POST',
+            body: JSON.stringify({ username }),
+        });
+    }
+    async checkUsername(username) {
+        return this.request(`/auth/check-username?username=${encodeURIComponent(username)}`);
+    }
+    async uploadAvatar(file) {
+        const data = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('Could not read file'));
+            reader.readAsDataURL(file);
+        });
+        return this.request('/auth/avatar', {
+            method: 'POST',
+            body: JSON.stringify({ data, contentType: file.type }),
+        });
+    }
+    async removeAvatar() {
+        return this.request('/auth/avatar', { method: 'DELETE' });
+    }
+    async getApps() {
+        const data = await this.request('/auth/apps');
+        return data.apps;
     }
 }

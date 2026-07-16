@@ -8,6 +8,7 @@ import { setState } from '../store.js';
 import { toast } from '../utils/toast.js';
 import { pageTransition } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
+import { astralSign } from '../utils/zodiac.js';
 
 const ASTRAL_SIGNS = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces'];
 const PRONOUNS = ['they/them', 'she/her', 'he/him', 'xe/xem', 'ze/zir', 'any', 'ask'];
@@ -207,6 +208,42 @@ export default async function SignupPage(container) {
       }, 400);
     });
 
+    // Avatar
+    const avatarPreview = h('div', {
+      className: 'profile-avatar-placeholder',
+      style: { width: '72px', height: '72px', margin: '0 auto', fontSize: '1.5rem', overflow: 'hidden' },
+    }, ['+']);
+    const avatarFileInput = h('input', {
+      type: 'file',
+      accept: 'image/png,image/jpeg,image/webp,image/gif',
+      style: { display: 'none' },
+    });
+    const avatarHint = h('p', { className: 'input-hint', style: { textAlign: 'center' } }, ['optional — png, jpg, webp or gif, up to 4mb']);
+    // programmatic .click() bubbles back to the picker's onClick — don't loop
+    avatarFileInput.addEventListener('click', (e) => e.stopPropagation());
+    avatarFileInput.addEventListener('change', () => {
+      const file = avatarFileInput.files[0];
+      if (!file) return;
+      if (file.size > 4 * 1024 * 1024) {
+        avatarHint.className = 'input-hint-error';
+        avatarHint.textContent = 'image too large (max 4mb)';
+        return;
+      }
+      state.formData.avatarFile = file;
+      avatarHint.className = 'input-hint';
+      avatarHint.textContent = file.name;
+      const url = URL.createObjectURL(file);
+      avatarPreview.textContent = '';
+      avatarPreview.appendChild(h('img', {
+        src: url, alt: '',
+        style: { width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' },
+      }));
+    });
+    const avatarPicker = h('div', {
+      style: { textAlign: 'center', cursor: 'pointer' },
+      onClick: () => avatarFileInput.click(),
+    }, [avatarPreview, avatarFileInput, avatarHint]);
+
     // Bio
     const bioInput = h('textarea', {
       className: 'input',
@@ -230,10 +267,11 @@ export default async function SignupPage(container) {
       return pill;
     });
 
-    // Astral sign
+    // Astral sign — precomputed from the birthday, still changeable
+    const computedSign = astralSign(state.formData.birthday);
     const signPills = ASTRAL_SIGNS.map(s => {
       const pill = h('button', {
-        className: 'pill',
+        className: 'pill' + (s === computedSign ? ' selected' : ''),
         type: 'button',
         dataset: { value: s },
         onClick: () => {
@@ -286,9 +324,13 @@ export default async function SignupPage(container) {
             try { await auth.setCharacteristics(chars); } catch { /* non-critical */ }
           }
 
+          if (state.formData.avatarFile) {
+            try { await auth.uploadAvatar(state.formData.avatarFile); } catch { /* non-critical */ }
+          }
+
           setState({ user: result.user, profile: { ...result.user, characteristics: chars } });
-          toast('Welcome to thay!', 'success');
-          navigate('/');
+          toast('Account created!', 'success');
+          navigate('/verify');
         } catch (err) {
           errorEl.textContent = err.message || 'Signup failed';
         }
@@ -297,6 +339,10 @@ export default async function SignupPage(container) {
       h('h2', {}, ['set up profile']),
       h('p', { className: 'subtitle' }, ['choose your identity']),
       h('div', { className: 'input-group' }, [
+        h('label', { className: 'input-label' }, ['avatar']),
+        avatarPicker,
+      ]),
+      h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
         h('label', { className: 'input-label', htmlFor: 'setup-username' }, ['username']),
         usernameInput,
         usernameHint,

@@ -56,6 +56,25 @@
 - Local dev: PocketBase on `127.0.0.1:8091` (dev-only schema), Express on `127.0.0.1:3749`, both started via plain `nohup` — not yet under launchd/pm2, restart by hand.
 - Full narrative + all pivotal decisions: see the `project_thay_auth` memory entry.
 
+## 2026-07-15 (evening) — Session Handoff
+
+### Completed
+- **Spinner root cause fixed** (7241904): lazy page loaders in `homebase/src/main.js` never invoked the loaded page fn. `modulePreload:false` + crossorigin-sed kept as hardening.
+- **uazit login unblocked**: PATCHed `isVerified`/`emailVerified` true via PB superuser API (record UPDATE works despite the CREATE bug). Login confirmed working by user.
+- **Login accepts username OR email**: frontend identity field + API-side username→email lookup (PB `identityFields` only has `email`; left the shared prod collection config untouched).
+- **STALPH brand font** live (4b9e74f).
+- **SDK was missing half its methods** (`setToken`, `getProfile`, `getApps`, `checkUsername`, `setCharacteristics`, `changeUsername`) — pages called them; added all + `uploadAvatar`/`removeAvatar`. `auth.setToken` was called at boot for returning users → would have thrown.
+- **Verification flow**: `/login` now returns `token`+`user` on the EMAIL_NOT_VERIFIED 403 (password already matched); new `/verify` page auto-sends a 6-digit code with resend cooldown; signup routes into it; dashboard bounces unverified users to it.
+- **Avatar**: `POST/DELETE /auth/avatar` (base64 JSON, 4MB cap → PB `users.avatar` file field, admin FormData update); file URLs built on `PB_PUBLIC_URL` (default `https://thaypley.com/hcgi/platform`); picker in signup step 3 + profile edit.
+- **Astral sign auto-computed** from birthday (`homebase/src/utils/zodiac.js`), preselected in signup, still changeable.
+- **Local e2e green**: invite → signup → unverified login 403+token → send-verification → verify-email → login 200 → avatar upload → characteristics → profile. Test data cleaned up.
+
+### Next Session
+- [ ] Flip `DIRECT_SQL_USERS=1` on VPS .env + confirm container (node uid 1000) can write `/pb_data/data.db` (owner `ubuntu`)
+- [ ] `SMTP_USER`/`SMTP_PASS` (Resend) into VPS .env — PB settings API masks the password; recover from PB `_params` on the box or get key from user
+- [ ] Prod e2e signup with a real invite code, then delete the test user
+- [ ] Wire `thaypley-tunes-desktop` via device-token flow
+
 ## 2026-07-15 — Session Handoff
 
 ### Completed

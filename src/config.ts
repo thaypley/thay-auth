@@ -31,4 +31,8 @@ export const config = {
   // authWithPassword call. Requires python3+bcrypt inside the image.
   directSqlUsers: process.env.DIRECT_SQL_USERS === '1',
   pbDataPath: process.env.PB_DATA_PATH || '/pb_data/data.db',
+
+  // Public base of the PocketBase instance, used to build browser-reachable
+  // file URLs (avatars). The internal pbUrl is host-local only.
+  pbPublicUrl: (process.env.PB_PUBLIC_URL || 'https://thaypley.com/hcgi/platform').replace(/\/+$/, ''),
 };

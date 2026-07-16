@@ -15,6 +15,7 @@ const LoginPage = lazy(() => import('./pages/LoginPage.js'));
 const SignupPage = lazy(() => import('./pages/SignupPage.js'));
 const WaitlistPage = lazy(() => import('./pages/WaitlistPage.js'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage.js'));
+const VerifyPage = lazy(() => import('./pages/VerifyPage.js'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
 
@@ -44,6 +45,15 @@ route('/signup', async (container) => {
     return;
   }
   await SignupPage(container);
+});
+
+route('/verify', async (container) => {
+  if (!hasToken()) {
+    const { navigate } = await import('./router.js');
+    navigate('/login', true);
+    return;
+  }
+  await VerifyPage(container);
 });
 
 route('/waitlist', async (container) => {

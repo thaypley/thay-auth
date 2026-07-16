@@ -29,6 +29,49 @@ export default async function ProfilePage(container) {
 
   const chars = profile.characteristics || {};
 
+  // Avatar
+  let avatarFile = null;
+  const avatarPreview = profile.avatar
+    ? h('div', { style: { width: '72px', height: '72px', margin: '0 auto', borderRadius: '50%', overflow: 'hidden' } }, [
+      h('img', { src: profile.avatar, alt: '', style: { width: '100%', height: '100%', objectFit: 'cover' } }),
+    ])
+    : h('div', {
+      className: 'profile-avatar-placeholder',
+      style: { width: '72px', height: '72px', margin: '0 auto', fontSize: '1.5rem' },
+    }, [(profile.username || '?')[0].toUpperCase()]);
+  const avatarFileInput = h('input', {
+    type: 'file',
+    accept: 'image/png,image/jpeg,image/webp,image/gif',
+    style: { display: 'none' },
+  });
+  const avatarHint = h('p', { className: 'input-hint', style: { textAlign: 'center' } }, ['click to change']);
+  // programmatic .click() bubbles back to the picker's onClick — don't loop
+  avatarFileInput.addEventListener('click', (e) => e.stopPropagation());
+  avatarFileInput.addEventListener('change', () => {
+    const file = avatarFileInput.files[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      avatarHint.className = 'input-hint-error';
+      avatarHint.textContent = 'image too large (max 4mb)';
+      return;
+    }
+    avatarFile = file;
+    avatarHint.className = 'input-hint';
+    avatarHint.textContent = file.name;
+    const url = URL.createObjectURL(file);
+    avatarPreview.textContent = '';
+    avatarPreview.style.borderRadius = '50%';
+    avatarPreview.style.overflow = 'hidden';
+    avatarPreview.appendChild(h('img', {
+      src: url, alt: '',
+      style: { width: '100%', height: '100%', objectFit: 'cover' },
+    }));
+  });
+  const avatarPicker = h('div', {
+    style: { textAlign: 'center', cursor: 'pointer' },
+    onClick: () => avatarFileInput.click(),
+  }, [avatarPreview, avatarFileInput, avatarHint]);
+
   const usernameInput = h('input', {
     className: 'input',
     type: 'text',
@@ -113,6 +156,10 @@ export default async function ProfilePage(container) {
       if (selectedSign && selectedSign.dataset.value) charsUpdate.astral_sign = selectedSign.dataset.value;
 
       try {
+        if (avatarFile) {
+          await auth.uploadAvatar(avatarFile);
+          avatarFile = null;
+        }
         await auth.updateProfile({ characteristics: charsUpdate });
         const updatedProfile = await auth.getProfile();
         setState({ profile: updatedProfile });
@@ -125,6 +172,10 @@ export default async function ProfilePage(container) {
   }, [
     h('h2', {}, ['edit profile']),
     h('div', { className: 'input-group' }, [
+      h('label', { className: 'input-label' }, ['avatar']),
+      avatarPicker,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
       h('label', { className: 'input-label', htmlFor: 'edit-username' }, ['username']),
       usernameInput,
       usernameHint,
