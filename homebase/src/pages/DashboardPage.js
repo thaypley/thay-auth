@@ -27,7 +27,24 @@ export default async function DashboardPage(container) {
       state = getState();
     } catch (err) {
       console.error('Failed to load profile:', err);
-      navigate('/login', true);
+      if (err.status === 401) {
+        // Token invalid — clear it so /login actually renders (with a token
+        // it redirects back to '/', which is an infinite loop)
+        const { clearToken } = await import('../sdk.js');
+        clearToken();
+        navigate('/login', true);
+        return;
+      }
+      // Server-side failure: show a retry state instead of looping
+      const errorCard = h('div', { className: 'form-card', style: { textAlign: 'center' } }, [
+        h('h2', {}, ['something broke']),
+        h('p', { className: 'subtitle' }, ['couldn’t load your dashboard — the server had an issue']),
+        h('button', {
+          className: 'btn btn-primary',
+          onClick: () => location.reload(),
+        }, ['retry']),
+      ]);
+      mount(container, h('div', {}, [NavBar(), h('div', { className: 'auth-page' }, [errorCard])]));
       return;
     }
   }

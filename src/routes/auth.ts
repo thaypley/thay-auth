@@ -16,6 +16,27 @@ const ASTRAL_SIGN_VALUES = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo
 
 const router = Router();
 
+// PB throws 404 "Missing collection context" when a collection doesn't
+// exist on the target instance. Read paths treat that as "no rows" so a
+// missing side-collection can't 500 core pages.
+async function safeList(
+  pb: Awaited<ReturnType<typeof getAdminPb>>,
+  collection: string,
+  page: number,
+  perPage: number,
+  options: Record<string, unknown>,
+): Promise<{ items: unknown[] }> {
+  try {
+    return await pb.collection(collection).getList(page, perPage, options);
+  } catch (err) {
+    if ((err as { status?: number })?.status === 404) {
+      logger.warn(`collection "${collection}" missing on PB instance — returning empty list`);
+      return { items: [] };
+    }
+    throw err;
+  }
+}
+
 function generateCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -498,7 +519,7 @@ router.get('/profile', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const user = await pb.collection('users').getOne(req.user!.id);
-    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
       filter: `userId="${req.user!.id}"`,
     });
 
@@ -562,7 +583,7 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
 
     // Fetch updated profile
     const user = await pb.collection('users').getOne(userId);
-    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
       filter: `userId="${userId}"`,
     });
     const charMap: Record<string, string> = {};
@@ -587,7 +608,7 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
 router.get('/profile/characteristics', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const chars = await pb.collection('user_characteristics').getList(1, 100, {
+    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
       filter: `userId="${req.user!.id}"`,
     });
     const map: Record<string, string> = {};
@@ -657,7 +678,7 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
 router.get('/apps', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const apps = await pb.collection('user_apps').getList(1, 100, {
+    const apps = await safeList(pb, 'user_apps', 1, 100, {
       filter: `userId="${req.user!.id}"`,
       sort: '-installedAt',
     });
