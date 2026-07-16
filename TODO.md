@@ -81,6 +81,11 @@
 - User must: resend.com → Domains → Add `thaypley.com` (region: pick closest) → use Resend's "Connect to Cloudflare" auto-DNS (zone is on Cloudflare; Hostinger mailbox MX/SPF at root are untouched — Resend uses `send.` subdomain + DKIM). Once status = verified, verification emails flow with zero code/config changes.
 - Until then signup works but codes must be read from the user record by an admin (or flags flipped manually).
 
+### Hotfix (same day): dashboard 500 loop
+- `GET /auth/profile` 500ed in prod → login/dashboard redirect loop. Cause: `user_characteristics` + `user_apps` collections never existed on the live PB (local dev had them via migrations 008/009 — that's why local e2e passed). Fixed twice over: `safeList()` in the API treats PB 404 "Missing collection context" as empty, AND both collections were created on hcgi/platform via superuser API (202→204, schema from migrations 008/009).
+- Dashboard error path fixed: 401 clears token then goes to /login (was looping since /login redirects back when a token exists); other errors render a retry card.
+- Gotcha for scripts on the VPS: PB_URL goes through Cloudflare — python urllib gets CF-blocked (403 error 1010, UA check); send a curl-ish User-Agent.
+
 ### Next Session
 - [x] Resend domain verified + SMTP send confirmed (250) — self-serve signup fully operational
 - [ ] Wire `thaypley-tunes-desktop` via device-token flow
