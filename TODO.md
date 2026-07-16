@@ -74,13 +74,15 @@
 - SMTP creds recovered from PB `_params` (settings stored plaintext; settings *API* masks them) into `/docker/thay-auth/.env`; `SMTP_HOST`/`SMTP_PORT` were EMPTY there and are now smtp.resend.com:465, `SMTP_FROM=hello@thaypley.com`. SMTP auth to Resend works.
 - CF Pages deployed the new SPA (verify flow in live bundle), GH Actions deploy green.
 
-### BLOCKED on user: Resend domain verification
+### ~~BLOCKED~~ RESOLVED 2026-07-16: user verified thaypley.com on Resend; test email through the container's SMTP path returned `250` (delivered to thaypley@gmail.com). Verification emails fully live.
+
+### (was) BLOCKED on user: Resend domain verification
 - Resend rejects sends with `550 domain not verified` — the account has **no verified domain**, so PB's own emails were never delivering either. The VPS API key is send-only restricted (can't create domains via API).
 - User must: resend.com → Domains → Add `thaypley.com` (region: pick closest) → use Resend's "Connect to Cloudflare" auto-DNS (zone is on Cloudflare; Hostinger mailbox MX/SPF at root are untouched — Resend uses `send.` subdomain + DKIM). Once status = verified, verification emails flow with zero code/config changes.
 - Until then signup works but codes must be read from the user record by an admin (or flags flipped manually).
 
 ### Next Session
-- [ ] Confirm Resend domain verified → retest `POST /auth/send-verification` end-to-end (real inbox)
+- [x] Resend domain verified + SMTP send confirmed (250) — self-serve signup fully operational
 - [ ] Wire `thaypley-tunes-desktop` via device-token flow
 - [ ] Consider: nightly cleanup of expired invites; rate-limit send-verification per user
 
