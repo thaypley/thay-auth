@@ -1,3 +1,24 @@
+## 2026-07-17 — Premortem Audit + Downloads Catalog
+
+Full write-up: `PREMORTEM.md`. Summary:
+
+### Fixed
+- JWT secret no longer silently falls back to a public default — service refuses to boot without one (`src/config.ts`).
+- Added in-memory rate limiting (`src/utils/rateLimit.ts`, no new dep) on login, signup, verification, password reset, username checks.
+- Replaced `Math.random()` with `crypto.randomBytes`/`randomInt` for device tokens + email verification codes.
+- Fixed PocketBase filter-injection risk on client-supplied `appId`.
+- Added the missing `/auth/confirm-password-reset` route + SDK method + `ForgotPasswordPage`/`ResetPasswordPage` — password reset was previously a dead end.
+- Fixed `auth.joinWaitlist()` — was called from `WaitlistPage.js` but never existed on the SDK; the waitlist button silently threw. This mattered a lot since signup requires an invite code and waitlist was the only fallback.
+- Loaded DM Sans / Space Mono (`tokens.css` referenced them, nothing ever `<link>`'d them in).
+- New public downloads catalog: `catalog_apps` PB collection (migration 010 + `scripts/seed-catalog-apps.mjs` for prod), `GET /auth/catalog`, `/downloads` page, nav link. Seeded with `(chronometer)` and `thay(jot)` as free downloads — **run the seed script against prod and fill in real download URLs before announcing.**
+
+### Still open (not touched — see PREMORTEM.md for why)
+- [ ] Commit `enforce_architect_limit.pb.js` (currently VPS-only) into this repo under `pb_hooks/`, confirm it also protects `isVerified`/`tier` — this is the real fix for the privilege-escalation risk on the shared `users` collection.
+- [ ] Token audience/app scoping — needed before a second app shares this auth service.
+- [ ] Dual-SQLite-writer risk under `DIRECT_SQL_USERS=1` during a traffic spike.
+- [ ] Confirm PB's password-reset email template actually links to `/#/reset-password?token=...` on the homebase domain.
+- [ ] Could not run `npm run build`/`lint` in this session's sandbox (registry blocked, read-only node_modules) — all TS changes reviewed manually, run both before deploying.
+
 ## 2026-07-14 — Session Handoff
 
 ### Completed

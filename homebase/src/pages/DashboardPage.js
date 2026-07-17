@@ -107,10 +107,10 @@ export default async function DashboardPage(container) {
     ].filter(Boolean));
   });
 
-  // Add placeholder "Coming Soon" card
-  appCards.push(h('div', { className: 'app-card', style: { opacity: 0.5 } }, [
-    h('div', { className: 'app-card-icon', style: { background: 'rgba(35,31,32,0.1)', fontSize: '24px' } }, ['+']),
-    h('div', { className: 'app-card-name' }, ['coming soon']),
+  // Link to the public downloads catalog rather than a dead-end card.
+  appCards.push(h('div', { className: 'app-card', onClick: () => navigate('/downloads') }, [
+    h('div', { className: 'app-card-icon', style: { background: 'var(--gradient-pink)', fontSize: '24px' } }, ['+']),
+    h('div', { className: 'app-card-name' }, ['get more apps']),
   ]));
 
   const appsSection = h('div', { className: 'glass-card-static' }, [

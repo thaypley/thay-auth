@@ -13,7 +13,13 @@ export function NavBar() {
 
   const brand = h('div', { className: 'navbar-brand', onClick: () => navigate('/') }, ['thay']);
 
+  const downloadsLink = h('button', {
+    className: 'btn btn-ghost btn-sm',
+    onClick: () => navigate('/downloads'),
+  }, ['downloads']);
+
   const end = h('div', { className: 'navbar-end' });
+  end.appendChild(downloadsLink);
 
   if (isLoggedIn && user) {
     const avatar = user.avatar

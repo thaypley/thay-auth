@@ -1,14 +1,29 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { createClient, getAdminPb } from '../providers/pocketbase.js';
 import { createUserDirect } from '../providers/directSqlUsers.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { rateLimit } from '../utils/rateLimit.js';
 import {
   validateEmail, validatePassword, validateUsername,
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
+
+// Escapes a value for safe interpolation inside a PocketBase filter string
+// literal (wrap the result in the surrounding quotes yourself). Prevents
+// filter-injection from client-supplied values that aren't already
+// constrained by a strict regex (e.g. appId).
+function escapePbFilterValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+// Auth-adjacent endpoints get a tight per-IP window — these are the routes
+// most attractive to credential stuffing / brute force / enumeration.
+const strictAuthLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'auth-strict' });
+const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 15, keyPrefix: 'auth-login' });
 
 const VALID_CHARACTERISTIC_KEYS = ['bio', 'pronouns', 'astral_sign'];
 const PRONOUN_VALUES = ['they/them', 'she/her', 'he/him', 'xe/xem', 'ze/zir', 'any', 'ask'];
@@ -38,14 +53,15 @@ async function safeList(
 }
 
 function generateCode(): string {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  return crypto.randomInt(100000, 1000000).toString();
 }
 
 function generateToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(64);
   let result = '';
   for (let i = 0; i < 64; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(bytes[i] % chars.length);
   }
   return result;
 }
@@ -76,7 +92,7 @@ function sanitizeUser(record: Record<string, unknown>) {
 
 // ─── Invite ────────────────────────────────────────────────────────
 
-router.post('/check-invite', async (req: Request, res: Response) => {
+router.post('/check-invite', strictAuthLimit, async (req: Request, res: Response) => {
   try {
     const { code } = req.body || req.query;
     const err = validateInviteCode(code);
@@ -112,7 +128,7 @@ router.post('/check-invite', async (req: Request, res: Response) => {
 
 // ─── Waitlist ──────────────────────────────────────────────────────
 
-router.post('/waitlist', async (req: Request, res: Response) => {
+router.post('/waitlist', strictAuthLimit, async (req: Request, res: Response) => {
   try {
     const { email, note, source } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
@@ -137,7 +153,7 @@ router.post('/waitlist', async (req: Request, res: Response) => {
 
 // ─── Signup ────────────────────────────────────────────────────────
 
-router.post('/signup', async (req: Request, res: Response) => {
+router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
   try {
     const { email, password, username, accountType, birthday, inviteCode } = req.body;
 
@@ -237,7 +253,7 @@ router.post('/signup', async (req: Request, res: Response) => {
 
 // ─── Login ─────────────────────────────────────────────────────────
 
-router.post('/login', async (req: Request, res: Response) => {
+router.post('/login', loginLimit, async (req: Request, res: Response) => {
   try {
     const { identity, password } = req.body;
     if (!identity || !password) {
@@ -325,7 +341,7 @@ router.post('/refresh', requireUser, async (req: Request, res: Response) => {
 
 // ─── Email Verification ────────────────────────────────────────────
 
-router.post('/send-verification', requireUser, async (req: Request, res: Response) => {
+router.post('/send-verification', strictAuthLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const user = req.user!;
@@ -347,7 +363,7 @@ router.post('/send-verification', requireUser, async (req: Request, res: Respons
   }
 });
 
-router.post('/verify-email', requireUser, async (req: Request, res: Response) => {
+router.post('/verify-email', strictAuthLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: 'Verification code required' });
@@ -473,7 +489,7 @@ router.delete('/avatar', requireUser, async (req: Request, res: Response) => {
 
 // ─── Check Username Availability ────────────────────────────────────
 
-router.get('/check-username', async (req: Request, res: Response) => {
+router.get('/check-username', strictAuthLimit, async (req: Request, res: Response) => {
   try {
     const username = req.query.username as string;
     if (!username) return res.status(400).json({ error: 'username query param required' });
@@ -493,7 +509,7 @@ router.get('/check-username', async (req: Request, res: Response) => {
 
 // ─── Password Reset ────────────────────────────────────────────────
 
-router.post('/request-password-reset', async (req: Request, res: Response) => {
+router.post('/request-password-reset', strictAuthLimit, async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
@@ -510,6 +526,28 @@ router.post('/request-password-reset', async (req: Request, res: Response) => {
       success: true,
       message: 'If an account exists with this email, a password reset link has been sent',
     });
+  }
+});
+
+router.post('/confirm-password-reset', strictAuthLimit, async (req: Request, res: Response) => {
+  try {
+    const { token, password, passwordConfirm } = req.body;
+    if (!token || !password || !passwordConfirm) {
+      return res.status(400).json({ error: 'token, password, and passwordConfirm are required' });
+    }
+    const pwErr = validatePassword(password);
+    if (pwErr) return res.status(400).json({ error: pwErr });
+    if (password !== passwordConfirm) {
+      return res.status(400).json({ error: 'Passwords do not match' });
+    }
+
+    const pb = createClient();
+    await pb.collection('users').confirmPasswordReset(token, password, passwordConfirm);
+
+    return res.status(200).json({ success: true, message: 'Password has been reset. You can now log in.' });
+  } catch (err) {
+    logger.warn('confirm-password-reset error:', err);
+    return res.status(400).json({ error: 'Invalid or expired reset link' });
   }
 });
 
@@ -673,6 +711,40 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
   }
 });
 
+// ─── Public App Catalog ─────────────────────────────────────────────
+// Distinct from the /apps routes below (which track what a *logged in*
+// user has installed). This is the public downloads list shown in
+// thay(portal) — no auth required so it can double as a marketing page.
+
+router.get('/catalog', async (_req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const apps = await safeList(pb, 'catalog_apps', 1, 100, {
+      filter: 'published=true',
+      sort: 'sortOrder',
+    });
+    return res.status(200).json({
+      apps: apps.items.map((a: unknown) => {
+        const rec = a as Record<string, unknown>;
+        return {
+          slug: rec.slug,
+          displayName: rec.displayName,
+          tagline: rec.tagline,
+          description: rec.description,
+          iconUrl: rec.iconUrl,
+          isFree: rec.isFree,
+          price: rec.price,
+          version: rec.version,
+          downloads: rec.downloads || {},
+        };
+      }),
+    });
+  } catch (err) {
+    logger.error('/catalog GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch catalog' });
+  }
+});
+
 // ─── Apps Management ───────────────────────────────────────────────
 
 router.get('/apps', requireUser, async (req: Request, res: Response) => {
@@ -707,11 +779,11 @@ router.get('/apps', requireUser, async (req: Request, res: Response) => {
 router.post('/apps', requireUser, async (req: Request, res: Response) => {
   try {
     const { appId, appName, installedVersion, autoUpdate } = req.body;
-    if (!appId) return res.status(400).json({ error: 'appId is required' });
+    if (!appId || typeof appId !== 'string') return res.status(400).json({ error: 'appId is required' });
 
     const pb = await getAdminPb();
     const existing = await pb.collection('user_apps').getList(1, 1, {
-      filter: `userId="${req.user!.id}" && appId="${appId}"`,
+      filter: `userId="${req.user!.id}" && appId="${escapePbFilterValue(appId)}"`,
     });
 
     if (existing.items.length > 0) {
@@ -747,7 +819,7 @@ router.delete('/apps/:appId', requireUser, async (req: Request, res: Response) =
     const { appId } = req.params;
     const pb = await getAdminPb();
     const existing = await pb.collection('user_apps').getList(1, 1, {
-      filter: `userId="${req.user!.id}" && appId="${appId}"`,
+      filter: `userId="${req.user!.id}" && appId="${escapePbFilterValue(appId)}"`,
     });
 
     if (existing.items.length === 0) {

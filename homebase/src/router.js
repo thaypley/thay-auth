@@ -9,7 +9,17 @@ export function route(path, renderFn) {
 }
 
 function getHash() {
-  return window.location.hash.slice(1) || '/';
+  const raw = window.location.hash.slice(1) || '/';
+  // Strip a trailing query string so route matching isn't thrown off by
+  // e.g. "#/reset-password?token=abc" — use getQueryParams() to read it.
+  const qIndex = raw.indexOf('?');
+  return qIndex === -1 ? raw : raw.slice(0, qIndex);
+}
+
+export function getQueryParams() {
+  const raw = window.location.hash.slice(1) || '';
+  const qIndex = raw.indexOf('?');
+  return new URLSearchParams(qIndex === -1 ? '' : raw.slice(qIndex + 1));
 }
 
 function getParams(routePath, hash) {

@@ -9,6 +9,11 @@ import sessionsRouter from './routes/sessions.js';
 
 const app = express();
 
+// thay-auth sits behind an nginx/VPS reverse proxy in production — trust
+// the first proxy hop so req.ip reflects the real client, not the proxy,
+// which the rate limiter depends on.
+app.set('trust proxy', 1);
+
 app.use(helmet());
 app.use(cors({
   origin: config.corsOrigins,

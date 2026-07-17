@@ -416,6 +416,60 @@
   color: var(--black);
 }
 
+/* ─── Downloads / Catalog ─────────────────────────────────────── */
+
+.downloads-page {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-2xl) var(--space-lg);
+}
+
+.downloads-header {
+  text-align: center;
+  margin-bottom: var(--space-2xl);
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-lg);
+}
+
+.catalog-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-xl);
+  text-align: center;
+}
+
+.catalog-card-name {
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--black);
+}
+
+.catalog-card-tagline {
+  font-size: var(--font-size-sm);
+  color: var(--pink-dark);
+  font-weight: 500;
+}
+
+.catalog-card-description {
+  font-size: var(--font-size-sm);
+  color: rgba(35, 31, 32, 0.6);
+}
+
+.catalog-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
 /* ─── Toast ────────────────────────────────────────────────────── */
 
 .toast-container {

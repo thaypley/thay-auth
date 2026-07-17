@@ -7,6 +7,12 @@
   <meta name="description" content="thay — your home base for all thay-applications" />
   <title>thay — home base</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <!-- --font-body / --font-mono in tokens.css reference DM Sans / Space Mono
+       but nothing ever loaded them — body text and mono UI elements were
+       silently falling back to system fonts. Load both here. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
   <style>
     /* ─── Critical inline CSS so page isn't blank while fonts/JS load ─── */
     @font-face{font-family:'STALPH';src:url('/assets/fonts/STALPH.ttf') format('truetype');font-display:swap}

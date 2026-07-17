@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { createClient, getAdminPb } from '../providers/pocketbase.js';
 import { signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
@@ -8,9 +9,10 @@ const router = Router();
 
 function generateToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(64);
   let result = '';
   for (let i = 0; i < 64; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
+    result += chars.charAt(bytes[i] % chars.length);
   }
   return result;
 }
@@ -24,7 +26,6 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
 
     const pb = await getAdminPb();
     const token = generateToken();
-    const crypto = await import('crypto');
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();

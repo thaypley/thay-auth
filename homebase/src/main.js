@@ -17,6 +17,9 @@ const WaitlistPage = lazy(() => import('./pages/WaitlistPage.js'));
 const DashboardPage = lazy(() => import('./pages/DashboardPage.js'));
 const VerifyPage = lazy(() => import('./pages/VerifyPage.js'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
+const DownloadsPage = lazy(() => import('./pages/DownloadsPage.js'));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.js'));
+const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
 
 // ─── Route Definitions ───────────────────────────────────────────
@@ -60,6 +63,19 @@ route('/waitlist', async (container) => {
   await WaitlistPage(container);
 });
 
+route('/forgot-password', async (container) => {
+  if (hasToken()) {
+    const { navigate } = await import('./router.js');
+    navigate('/', true);
+    return;
+  }
+  await ForgotPasswordPage(container);
+});
+
+route('/reset-password', async (container) => {
+  await ResetPasswordPage(container);
+});
+
 route('/profile', async (container) => {
   if (!hasToken()) {
     const { navigate } = await import('./router.js');
@@ -67,6 +83,11 @@ route('/profile', async (container) => {
     return;
   }
   await ProfilePage(container);
+});
+
+// Public — no login required, doubles as a marketing page.
+route('/downloads', async (container) => {
+  await DownloadsPage(container);
 });
 
 route('/404', async (container) => {

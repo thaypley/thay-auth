@@ -77,6 +77,9 @@ export default async function LoginPage(container) {
     ]),
     h('div', { className: 'form-actions' }, [submitBtn, errorEl]),
     h('div', { className: 'form-footer' }, [
+      h('a', { onClick: () => navigate('/forgot-password') }, ['forgot password?']),
+    ]),
+    h('div', { className: 'form-footer' }, [
       "don't have an account? ",
       h('a', { onClick: () => navigate('/signup') }, ['sign up']),
       ' · ',

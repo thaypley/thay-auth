@@ -1,5 +1,16 @@
 import 'dotenv/config';
 
+// Fail fast rather than silently signing tokens with a known default. A
+// missing secret in prod would otherwise let anyone forge valid device
+// JWTs — this must never fall back quietly.
+const jwtSecret = process.env.THAY_AUTH_JWT_SECRET;
+if (!jwtSecret || jwtSecret.length < 16) {
+  throw new Error(
+    'THAY_AUTH_JWT_SECRET is missing or too short (min 16 chars). ' +
+    'Set it in your environment before starting thay-auth — refusing to boot with an insecure default.',
+  );
+}
+
 export const config = {
   port: parseInt(process.env.PORT || '3749', 10),
 
@@ -7,7 +18,7 @@ export const config = {
   pbAdminEmail: process.env.PB_ADMIN_EMAIL || '',
   pbAdminPassword: process.env.PB_ADMIN_PASSWORD || '',
 
-  jwtSecret: process.env.THAY_AUTH_JWT_SECRET || 'dev-secret-change-in-production',
+  jwtSecret,
 
   corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3749').split(','),
 

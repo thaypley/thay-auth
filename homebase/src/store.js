@@ -6,6 +6,7 @@ const state = {
   profile: null,
   apps: [],
   devices: [],
+  catalog: [],
   loading: false,
 };
 

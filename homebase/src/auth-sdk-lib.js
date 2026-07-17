@@ -104,6 +104,22 @@ export class ThayAuth {
             body: JSON.stringify({ email }),
         });
     }
+    async confirmPasswordReset(token, password, passwordConfirm) {
+        return this.request('/auth/confirm-password-reset', {
+            method: 'POST',
+            body: JSON.stringify({ token, password, passwordConfirm }),
+        });
+    }
+    async joinWaitlist(email, note) {
+        return this.request('/auth/waitlist', {
+            method: 'POST',
+            body: JSON.stringify({ email, note }),
+        });
+    }
+    async getCatalog() {
+        const data = await this.request('/auth/catalog');
+        return data.apps;
+    }
     async checkInviteCode(code) {
         return this.request('/auth/check-invite', {
             method: 'POST',
