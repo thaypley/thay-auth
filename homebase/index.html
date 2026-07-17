@@ -33,6 +33,15 @@
       <p style="color:rgba(35,31,32,.5);font-size:.875rem">loading home base…</p>
     </div>
   </div>
+  <script>
+    // PocketBase sends password-reset emails with URLs like
+    // /_/auth/reset-password/{TOKEN} based on meta.appURL.
+    // Redirect to the hash-routed SPA page that our ResetPasswordPage handles.
+    (function(){
+      var m = location.pathname.match(/^\/_\/auth\/reset-password\/(.+)$/);
+      if (m) location.replace('/#/reset-password?token=' + encodeURIComponent(m[1]));
+    })();
+  </script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
