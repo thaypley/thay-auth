@@ -8,7 +8,7 @@ import { NavBar } from '../components/NavBar.js';
 export default async function NotFoundPage(container) {
   const page = h('div', { className: 'error-page' }, [
     h('h1', {}, ['404']),
-    h('p', {}, ["this page doesn't exist"]),
+    h('p', {}, ["lost in the (u)niverse — this page doesn't exist"]),
     h('button', { className: 'btn btn-primary', onClick: () => navigate('/') }, ['go home']),
   ]);
 

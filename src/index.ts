@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import { config } from './config.js';
-import { logger } from './utils/logger.js';
+import { logger, createRequestId, setRequestId } from './utils/logger.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import sessionsRouter from './routes/sessions.js';
@@ -13,6 +13,14 @@ const app = express();
 // the first proxy hop so req.ip reflects the real client, not the proxy,
 // which the rate limiter depends on.
 app.set('trust proxy', 1);
+
+// Request ID — attach to every request for log correlation
+app.use((req, _res, next) => {
+  const reqId = (req.headers['x-request-id'] as string) || createRequestId();
+  setRequestId(reqId);
+  (req as unknown as Record<string, unknown>).reqId = reqId;
+  next();
+});
 
 app.use(helmet());
 app.use(cors({

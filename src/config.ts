@@ -46,4 +46,10 @@ export const config = {
   // Public base of the PocketBase instance, used to build browser-reachable
   // file URLs (avatars). The internal pbUrl is host-local only.
   pbPublicUrl: (process.env.PB_PUBLIC_URL || 'https://thaypley.com/hcgi/platform').replace(/\/+$/, ''),
+
+  // Token expiry — 30 days. Used for both user sessions and device tokens.
+  tokenExpiryMs: 30 * 24 * 60 * 60 * 1000,
+
+  // Verification code expiry — 15 minutes.
+  verificationCodeExpiryMs: 15 * 60 * 1000,
 };

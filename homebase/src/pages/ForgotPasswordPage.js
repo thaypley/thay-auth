@@ -23,14 +23,15 @@ export default async function ForgotPasswordPage(container) {
     type: 'submit',
   }, ['send reset link']);
 
-  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center' } });
-  const successEl = h('p', { className: 'input-hint', style: { textAlign: 'center' } });
+  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center' }, 'aria-live': 'polite' });
+  const successEl = h('p', { className: 'input-hint', style: { textAlign: 'center' }, 'aria-live': 'polite' });
 
   const form = h('form', {
+    novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
       const email = emailInput.value.trim();
-      if (!email) { errorEl.textContent = 'Email is required'; return; }
+      if (!email) { errorEl.textContent = 'email is required'; return; }
       errorEl.textContent = '';
       successEl.textContent = '';
       submitBtn.disabled = true;
@@ -38,10 +39,10 @@ export default async function ForgotPasswordPage(container) {
 
       try {
         await auth.requestPasswordReset(email);
-        successEl.textContent = 'If an account exists with this email, a reset link is on its way.';
-        toast('Check your inbox', 'success');
+        successEl.textContent = 'if an account exists with this email, a reset link is on its way.';
+        toast('check your inbox', 'success');
       } catch (err) {
-        errorEl.textContent = err.message || 'Something went wrong';
+        errorEl.textContent = err.message || 'something went wrong — try again';
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'send reset link';
@@ -54,13 +55,13 @@ export default async function ForgotPasswordPage(container) {
     ]),
     h('div', { className: 'form-actions' }, [submitBtn, errorEl, successEl]),
     h('div', { className: 'form-footer' }, [
-      h('a', { onClick: () => navigate('/login') }, ['back to log in']),
+      h('button', { type: 'button', className: 'link-btn', onClick: () => navigate('/login') }, ['back to log in']),
     ]),
   ]);
 
   const card = h('div', { className: 'form-card' }, [
     h('h2', {}, ['reset password']),
-    h('p', { className: 'subtitle' }, ["we'll email you a link"]),
+    h('p', { className: 'subtitle' }, ["we'll email (you) a link"]),
     form,
   ]);
 

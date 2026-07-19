@@ -36,10 +36,11 @@ export default async function LoginPage(container) {
     id: 'login-submit',
   }, ['log in']);
 
-  const errorEl = h('p', { className: 'input-hint-error', id: 'login-error', style: { textAlign: 'center', marginTop: '8px' } });
+  const errorEl = h('p', { className: 'input-hint-error', id: 'login-error', style: { textAlign: 'center', marginTop: '8px' }, 'aria-live': 'polite' });
 
   const form = h('form', {
     id: 'login-form',
+    novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
       submitBtn.disabled = true;
@@ -49,18 +50,18 @@ export default async function LoginPage(container) {
       try {
         const result = await auth.login(identity.value, password.value);
         setState({ user: result.user, profile: { ...result.user, characteristics: {} } });
-        toast('Welcome back!', 'success');
+        toast('welcome back, (you)!', 'success');
         navigate('/');
       } catch (err) {
         if (err.code === 'EMAIL_NOT_VERIFIED' && err.data?.token) {
           // Password was right — park the token and route into verification
           saveToken(err.data.token);
           setState({ user: err.data.user });
-          toast('One more step: verify your email', 'info');
+          toast('one more step — verify your email', 'info');
           navigate('/verify');
           return;
         }
-        errorEl.textContent = err.message || 'Login failed';
+        errorEl.textContent = err.message || 'log in failed — check your details and try again';
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'log in';
@@ -77,13 +78,13 @@ export default async function LoginPage(container) {
     ]),
     h('div', { className: 'form-actions' }, [submitBtn, errorEl]),
     h('div', { className: 'form-footer' }, [
-      h('a', { onClick: () => navigate('/forgot-password') }, ['forgot password?']),
+      h('button', { type: 'button', className: 'link-btn', onClick: () => navigate('/forgot-password') }, ['forgot password?']),
     ]),
     h('div', { className: 'form-footer' }, [
       "don't have an account? ",
-      h('a', { onClick: () => navigate('/signup') }, ['sign up']),
+      h('button', { type: 'button', className: 'link-btn', onClick: () => navigate('/signup') }, ['sign up']),
       ' · ',
-      h('a', { onClick: () => navigate('/waitlist') }, ['join waitlist']),
+      h('button', { type: 'button', className: 'link-btn', onClick: () => navigate('/waitlist') }, ['join waitlist']),
     ]),
   ]);
 

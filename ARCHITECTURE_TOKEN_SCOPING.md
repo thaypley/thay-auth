@@ -1,6 +1,23 @@
 # Token audience/app scoping — design doc
 
-Status: **proposal, not implemented.** Written 2026-07-17 as a follow-up to the pre-launch premortem (`PREMORTEM.md` #10). Review before any code changes — this touches every app that will ever authenticate through thay-auth.
+Status: **step 1 implemented 2026-07-17 (later same day).** Written as a follow-up to the pre-launch premortem (`PREMORTEM.md` #10).
+
+## Implementation note (step 1, as actually built)
+
+The `sessions` collection already existed with a `tokenHash` field (used by nothing until now) rather than a session-ID-in-JWT design — so step 1 was simpler than originally sketched below: **no new JWT format needed.** Instead:
+
+- `pb_migrations/011_add_app_to_sessions.js` (+ `scripts/add-app-field-to-sessions.mjs` for the live instance, same "migrations don't run against hcgi/platform directly" pattern as `catalog_apps`) adds a `sessions.app` select field.
+- `/auth/login`, `/auth/signup`, `/auth/refresh` now accept an optional `app` body param (defaults to `homebase`, validated against `KNOWN_APPS` in `src/utils/apps.ts`) and write a `sessions` row keyed by `sha256(token)` via the new `recordSession()` helper in `auth.ts`. Non-fatal on failure — never blocks login if the migration hasn't landed on a given PB instance yet.
+- `requireUser` (`src/middleware/requireAuth.ts`) now checks for a matching `sessions` row and rejects with 401 if `revoked: true`. **Fails open** if no row exists (pre-rollout tokens, or the migration not yet applied) — this can only make things *stricter* for tokens we recorded, never lock anyone out unexpectedly.
+- `GET /sessions` now returns each session's `app`.
+
+**Not yet done:** per-route `aud` enforcement (a token issued for `app: "tunes"` still works against every route — nothing rejects cross-app use yet). That's intentionally deferred to whenever a second app actually integrates, per the original rollout sequence below. Also not done: the homebase SDK doesn't explicitly pass `app: "homebase"` on `signup()` (relies on the server-side default, which is correct today but silent).
+
+**Deploy step required:** run `node scripts/add-app-field-to-sessions.mjs` against prod (same as the catalog seed script) before this does anything live — until then `recordSession` fails silently (by design) and sessions just don't get the `app` label yet.
+
+## Original proposal (pre-implementation)
+
+Status: review before further changes — this touches every app that will ever authenticate through thay-auth.
 
 ## The problem
 

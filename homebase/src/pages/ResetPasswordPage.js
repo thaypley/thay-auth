@@ -21,6 +21,7 @@ export default async function ResetPasswordPage(container) {
     autocomplete: 'new-password',
     required: true,
   });
+  const passwordHint = h('p', { className: 'input-hint' }, ['at least 8 characters']);
 
   const confirmInput = h('input', {
     className: 'input',
@@ -36,25 +37,27 @@ export default async function ResetPasswordPage(container) {
     type: 'submit',
   }, ['reset password']);
 
-  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center' } });
+  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center' }, 'aria-live': 'polite' });
 
   const form = h('form', {
+    novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
-      if (!token) { errorEl.textContent = 'Missing or invalid reset link'; return; }
+      if (!token) { errorEl.textContent = 'missing or invalid reset link'; return; }
       const password = passwordInput.value;
       const passwordConfirm = confirmInput.value;
-      if (password !== passwordConfirm) { errorEl.textContent = 'Passwords do not match'; return; }
+      if (password.length < 8) { errorEl.textContent = 'password needs to be at least 8 characters'; return; }
+      if (password !== passwordConfirm) { errorEl.textContent = "passwords don't match"; return; }
       errorEl.textContent = '';
       submitBtn.disabled = true;
       submitBtn.textContent = '...';
 
       try {
         await auth.confirmPasswordReset(token, password, passwordConfirm);
-        toast('Password reset — log in with your new password', 'success');
+        toast('password reset — log in with your new password', 'success');
         navigate('/login');
       } catch (err) {
-        errorEl.textContent = err.message || 'Reset link is invalid or expired';
+        errorEl.textContent = err.message || 'that reset link is invalid or expired';
         submitBtn.disabled = false;
         submitBtn.textContent = 'reset password';
       }
@@ -63,18 +66,30 @@ export default async function ResetPasswordPage(container) {
     h('div', { className: 'input-group' }, [
       h('label', { className: 'input-label', htmlFor: 'reset-password' }, ['new password']),
       passwordInput,
+      passwordHint,
     ]),
     h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
       h('label', { className: 'input-label', htmlFor: 'reset-password-confirm' }, ['confirm password']),
       confirmInput,
     ]),
     h('div', { className: 'form-actions' }, [submitBtn, errorEl]),
+    h('div', { className: 'form-footer' }, [
+      "link expired or not working? ",
+      h('button', { type: 'button', className: 'link-btn', onClick: () => navigate('/forgot-password') }, ['request a new one']),
+    ]),
   ]);
 
   const card = h('div', { className: 'form-card' }, [
     h('h2', {}, ['new password']),
     !token
-      ? h('p', { className: 'input-hint-error', style: { textAlign: 'center' } }, ['This reset link is missing or invalid. Request a new one from the login page.'])
+      ? h('div', { style: { textAlign: 'center' } }, [
+        h('p', { className: 'input-hint-error' }, ['this reset link is missing or invalid — request a new one below.']),
+        h('button', {
+          className: 'btn btn-primary btn-lg',
+          style: { marginTop: 'var(--space-lg)' },
+          onClick: () => navigate('/forgot-password'),
+        }, ['request a new link']),
+      ])
       : form,
   ]);
 

@@ -14,6 +14,7 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
 
     const result = (sessions as unknown as Record<string, unknown>[]).map(s => ({
       id: s.id,
+      app: s.app || 'homebase',
       deviceId: s.deviceId,
       ip: s.ip,
       userAgent: s.userAgent,
@@ -43,7 +44,7 @@ router.delete('/:id', requireUser, async (req: Request, res: Response) => {
     await pb.collection('sessions').update(id, { revoked: true });
     logger.info(`Session revoked: ${id} for user ${req.user!.id}`);
     return res.status(200).json({ success: true });
-  } catch (err) {
+  } catch {
     return res.status(500).json({ error: 'Failed to revoke session' });
   }
 });

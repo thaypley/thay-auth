@@ -21,6 +21,10 @@
   --white: #ffffff;
   --off-white: #fefefe;
 
+  /* AA-safe pink for body text/links on white — --pink-dark fails WCAG
+     contrast (~2.6:1) at text sizes, this passes ~4.8:1 */
+  --pink-text: #a8577d;
+
   /* Surface */
   --surface: #fefefe;
   --surface-hover: #fef4f8;

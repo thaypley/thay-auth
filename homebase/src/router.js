@@ -98,9 +98,23 @@ async function render() {
     return;
   }
 
-  const cleanup = await matched.handler(app, matched.params);
-  if (typeof cleanup === 'function') {
-    currentCleanup = cleanup;
+  try {
+    const cleanup = await matched.handler(app, matched.params);
+    if (typeof cleanup === 'function') {
+      currentCleanup = cleanup;
+    }
+  } catch (err) {
+    // Global safety net: without this, any uncaught error inside a page
+    // handler left the user stuck on the boot spinner forever with no
+    // feedback and no way forward except closing the tab.
+    console.error('Route render failed:', err);
+    app.innerHTML = `
+      <div class="error-page">
+        <h1 style="font-size: 2.5rem;">oops</h1>
+        <p>something broke loading this page — try refreshing.</p>
+        <button class="btn btn-primary" onclick="location.reload()">refresh</button>
+      </div>
+    `;
   }
 }
 

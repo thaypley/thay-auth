@@ -49,10 +49,10 @@ export class ThayAuth {
         }
         return data;
     }
-    async login(identity, password) {
+    async login(identity, password, app = 'homebase') {
         const data = await this.request('/auth/login', {
             method: 'POST',
-            body: JSON.stringify({ identity, password }),
+            body: JSON.stringify({ identity, password, app }),
         });
         this.token = data.token;
         this.user = data.user;

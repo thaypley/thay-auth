@@ -31,13 +31,15 @@ export default async function VerifyPage(container) {
     style: { textAlign: 'center', letterSpacing: '8px', fontSize: '1.25rem' },
   });
 
-  const statusEl = h('p', { className: 'input-hint', style: { textAlign: 'center' } });
-  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center', marginTop: '8px' } });
+  const statusEl = h('p', { className: 'input-hint', style: { textAlign: 'center' }, 'aria-live': 'polite' });
+  const errorEl = h('p', { className: 'input-hint-error', style: { textAlign: 'center', marginTop: '8px' }, 'aria-live': 'polite' });
   const submitBtn = h('button', { className: 'btn btn-primary btn-lg', type: 'submit' }, ['verify']);
 
   let cooldown = 0;
   let cooldownTimer = null;
-  const resendLink = h('a', {
+  const resendLink = h('button', {
+    type: 'button',
+    className: 'link-btn',
     onClick: async () => {
       if (cooldown > 0) return;
       await sendCode();
@@ -46,14 +48,14 @@ export default async function VerifyPage(container) {
 
   function startCooldown() {
     cooldown = RESEND_COOLDOWN_S;
-    resendLink.style.opacity = '0.4';
+    resendLink.disabled = true;
     clearInterval(cooldownTimer);
     cooldownTimer = setInterval(() => {
       cooldown--;
       resendLink.textContent = cooldown > 0 ? `resend code (${cooldown}s)` : 'resend code';
       if (cooldown <= 0) {
         clearInterval(cooldownTimer);
-        resendLink.style.opacity = '1';
+        resendLink.disabled = false;
       }
     }, 1000);
   }
@@ -63,20 +65,21 @@ export default async function VerifyPage(container) {
     statusEl.textContent = 'sending code…';
     try {
       await auth.sendVerificationEmail();
-      statusEl.textContent = 'we emailed you a 6-digit code';
+      statusEl.textContent = 'we emailed (you) a 6-digit code';
       startCooldown();
     } catch (err) {
       statusEl.textContent = '';
-      errorEl.textContent = err.message || 'Could not send the code — try resend';
+      errorEl.textContent = err.message || 'could not send the code — try resend';
     }
   }
 
   const form = h('form', {
+    novalidate: true,
     onsubmit: async (e) => {
       e.preventDefault();
       const code = codeInput.value.trim();
       if (!/^\d{6}$/.test(code)) {
-        errorEl.textContent = 'Enter the 6-digit code from your email';
+        errorEl.textContent = 'enter the 6-digit code from your email';
         return;
       }
       errorEl.textContent = '';
@@ -86,10 +89,10 @@ export default async function VerifyPage(container) {
         await auth.verifyEmail(code);
         // Drop the cached (unverified) profile so the dashboard refetches
         setState({ profile: null });
-        toast('Email verified — welcome to thay!', 'success');
+        toast('email verified — welcome to thay!', 'success');
         navigate('/');
       } catch (err) {
-        errorEl.textContent = err.message || 'Verification failed';
+        errorEl.textContent = err.message || 'verification failed — try again';
       } finally {
         submitBtn.disabled = false;
         submitBtn.textContent = 'verify';
@@ -105,7 +108,9 @@ export default async function VerifyPage(container) {
     h('div', { className: 'form-footer' }, [
       resendLink,
       ' · ',
-      h('a', {
+      h('button', {
+        type: 'button',
+        className: 'link-btn',
         onClick: async () => {
           await auth.logout();
           const { clearToken } = await import('../sdk.js');
@@ -118,7 +123,7 @@ export default async function VerifyPage(container) {
 
   const card = h('div', { className: 'form-card' }, [
     h('h2', {}, ['check your email']),
-    h('p', { className: 'subtitle' }, ['one last step — confirm it’s really you']),
+    h('p', { className: 'subtitle' }, ['one last step — confirm it’s really (you)']),
     form,
   ]);
 

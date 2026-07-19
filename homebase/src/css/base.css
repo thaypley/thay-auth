@@ -75,7 +75,7 @@ p {
 }
 
 a {
-  color: var(--pink-dark);
+  color: var(--pink-text);
   text-decoration: none;
   transition: color var(--duration-fast) var(--ease-out);
 }

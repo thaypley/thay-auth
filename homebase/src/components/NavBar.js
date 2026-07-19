@@ -11,7 +11,7 @@ export function NavBar() {
   const state = getState();
   const user = state.user || state.profile;
 
-  const brand = h('div', { className: 'navbar-brand', onClick: () => navigate('/') }, ['thay']);
+  const brand = h('button', { type: 'button', className: 'navbar-brand', onClick: () => navigate('/') }, ['thay']);
 
   const downloadsLink = h('button', {
     className: 'btn btn-ghost btn-sm',
@@ -23,7 +23,7 @@ export function NavBar() {
 
   if (isLoggedIn && user) {
     const avatar = user.avatar
-      ? h('img', { className: 'navbar-avatar', src: user.avatar, alt: '' })
+      ? h('img', { className: 'navbar-avatar', src: user.avatar, alt: `${user.username || 'your'} avatar` })
       : h('div', {
           className: 'navbar-avatar',
           style: {
@@ -31,18 +31,20 @@ export function NavBar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'white',
+            color: 'var(--black)',
             fontSize: '14px',
             fontWeight: '700',
             fontFamily: 'var(--font-mono)',
           },
-        }, [user.username ? user.username[0].toUpperCase() : '?']);
+        }, [(user.username || '?')[0].toUpperCase()]);
 
-    const username = h('span', { className: 'navbar-username' }, [`@${user.username}`]);
+    const username = h('span', { className: 'navbar-username' }, [`@${user.username || 'you'}`]);
 
-    const userMenu = h('div', {
+    const userMenu = h('button', {
+      type: 'button',
       className: 'navbar-user',
       onClick: () => navigate('/profile'),
+      'aria-label': 'go to your profile',
     }, [avatar, username]);
 
     const logoutBtn = h('button', {

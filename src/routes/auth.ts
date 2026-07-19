@@ -6,24 +6,21 @@ import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { rateLimit } from '../utils/rateLimit.js';
+import { hashToken } from '../utils/hashToken.js';
+import { normalizeApp } from '../utils/apps.js';
 import {
   validateEmail, validatePassword, validateUsername,
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
 
-// Escapes a value for safe interpolation inside a PocketBase filter string
-// literal (wrap the result in the surrounding quotes yourself). Prevents
-// filter-injection from client-supplied values that aren't already
-// constrained by a strict regex (e.g. appId).
 function escapePbFilterValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-// Auth-adjacent endpoints get a tight per-IP window — these are the routes
-// most attractive to credential stuffing / brute force / enumeration.
 const strictAuthLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'auth-strict' });
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 15, keyPrefix: 'auth-login' });
+const avatarLimit = rateLimit({ windowMs: 60 * 1000, max: 5, keyPrefix: 'auth-avatar' });
 
 const VALID_CHARACTERISTIC_KEYS = ['bio', 'pronouns', 'astral_sign'];
 const PRONOUN_VALUES = ['they/them', 'she/her', 'he/him', 'xe/xem', 'ze/zir', 'any', 'ask'];
@@ -31,9 +28,6 @@ const ASTRAL_SIGN_VALUES = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo
 
 const router = Router();
 
-// PB throws 404 "Missing collection context" when a collection doesn't
-// exist on the target instance. Read paths treat that as "no rows" so a
-// missing side-collection can't 500 core pages.
 async function safeList(
   pb: Awaited<ReturnType<typeof getAdminPb>>,
   collection: string,
@@ -45,7 +39,7 @@ async function safeList(
     return await pb.collection(collection).getList(page, perPage, options);
   } catch (err) {
     if ((err as { status?: number })?.status === 404) {
-      logger.warn(`collection "${collection}" missing on PB instance — returning empty list`);
+      logger.warn(`collection "${collection}" missing on PB instance`, { collection });
       return { items: [] };
     }
     throw err;
@@ -56,20 +50,9 @@ function generateCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
-function generateToken(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  const bytes = crypto.randomBytes(64);
-  let result = '';
-  for (let i = 0; i < 64; i++) {
-    result += chars.charAt(bytes[i] % chars.length);
-  }
-  return result;
-}
-
 function avatarUrl(record: Record<string, unknown>): string {
   const filename = record.avatar as string;
   if (!filename) return '';
-  // Already a full URL (legacy rows on the shared users collection)
   if (/^https?:\/\//.test(filename)) return filename;
   return `${config.pbPublicUrl}/api/files/users/${record.id}/${filename}`;
 }
@@ -88,6 +71,42 @@ function sanitizeUser(record: Record<string, unknown>) {
     created: record.created,
     updated: record.updated,
   };
+}
+
+async function recordSession(
+  pb: Awaited<ReturnType<typeof getAdminPb>>,
+  userId: string,
+  token: string,
+  app: unknown,
+  req: Request,
+): Promise<void> {
+  try {
+    await pb.collection('sessions').create({
+      userId,
+      tokenHash: hashToken(token),
+      app: normalizeApp(app),
+      ip: req.ip,
+      userAgent: (req.headers['user-agent'] as string || '').slice(0, 500),
+      expiresAt: new Date(Date.now() + config.tokenExpiryMs).toISOString(),
+      revoked: false,
+    });
+  } catch (err) {
+    logger.warn('recordSession failed (non-fatal)', { error: err });
+  }
+}
+
+async function revokeSessionByToken(pb: Awaited<ReturnType<typeof getAdminPb>>, token: string): Promise<boolean> {
+  try {
+    const match = await pb.collection('sessions').getList(1, 1, {
+      filter: `tokenHash="${hashToken(token)}"`,
+    });
+    if (match.items.length === 0) return false;
+    await pb.collection('sessions').update(match.items[0].id, { revoked: true });
+    return true;
+  } catch (err) {
+    logger.warn('revokeSessionByToken failed', { error: err });
+    return false;
+  }
 }
 
 // ─── Invite ────────────────────────────────────────────────────────
@@ -155,7 +174,7 @@ router.post('/waitlist', strictAuthLimit, async (req: Request, res: Response) =>
 
 router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
   try {
-    const { email, password, username, accountType, birthday, inviteCode } = req.body;
+    const { email, password, username, accountType, birthday, inviteCode, app } = req.body;
 
     const errors: string[] = [];
     const e1 = validateEmail(email);
@@ -231,12 +250,13 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         usedBy: userId,
         usedAt: new Date().toISOString(),
       });
-    } catch (redeemErr) {
-      logger.warn('Failed to redeem invite:', redeemErr);
+    } catch (_redeemErr) {
+      logger.warn('Failed to redeem invite:', _redeemErr);
     }
 
     const userPb = createClient();
     const authData = await userPb.collection('users').authWithPassword(normalizedEmail, password);
+    await recordSession(pb, userId, authData.token, app, req);
 
     logger.info(`User signed up: ${userId} (${sanitizedUsername})${config.directSqlUsers ? ' [direct-sql]' : ''}`);
 
@@ -255,12 +275,11 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
 
 router.post('/login', loginLimit, async (req: Request, res: Response) => {
   try {
-    const { identity, password } = req.body;
+    const { identity, password, app } = req.body;
     if (!identity || !password) {
       return res.status(400).json({ error: 'identity and password are required' });
     }
 
-    // PB's identityFields only include email; resolve usernames ourselves.
     let loginIdentity = identity.toLowerCase().trim();
     if (!loginIdentity.includes('@') && /^[a-z0-9_]{3,20}$/.test(loginIdentity)) {
       try {
@@ -271,17 +290,16 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
         if (match.items.length > 0) {
           loginIdentity = (match.items[0] as unknown as Record<string, string>).email;
         }
-      } catch { /* fall through to authWithPassword with the raw identity */ }
+      } catch { /* fall through */ }
     }
 
     const pb = createClient();
     const authData = await pb.collection('users').authWithPassword(loginIdentity, password);
+    const adminPbForSession = await getAdminPb();
+    await recordSession(adminPbForSession, authData.record.id as string, authData.token, app, req);
 
     const record = authData.record as unknown as Record<string, unknown>;
     if (!record.isVerified) {
-      // Password already matched — hand back the token so the client can
-      // complete verification (/send-verification + /verify-email) without
-      // being locked out of the flow entirely.
       return res.status(403).json({
         error: 'Email not verified',
         code: 'EMAIL_NOT_VERIFIED',
@@ -295,7 +313,7 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
     return res.status(200).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
       token: authData.token,
-      expiry: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      expiry: Date.now() + config.tokenExpiryMs,
     });
   } catch (err) {
     logger.warn('login failed:', err);
@@ -307,9 +325,19 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
 
 router.post('/logout', requireUser, async (req: Request, res: Response) => {
   try {
-    logger.info(`User logged out: ${req.user!.id}`);
+    const token = req.headers.authorization!.slice(7);
+    const pb = await getAdminPb();
+    const revoked = await revokeSessionByToken(pb, token);
+
+    if (revoked) {
+      logger.info(`Session revoked on logout for user ${req.user!.id}`);
+    } else {
+      logger.warn(`Logout: no session found to revoke for user ${req.user!.id}`);
+    }
+
     return res.status(200).json({ success: true });
   } catch (err) {
+    logger.error('Logout failed:', err);
     return res.status(500).json({ error: 'Logout failed' });
   }
 });
@@ -330,11 +358,13 @@ router.post('/refresh', requireUser, async (req: Request, res: Response) => {
     const pb = createClient();
     pb.authStore.save(req.headers.authorization!.slice(7), null);
     const authData = await pb.collection('users').authRefresh();
+    const adminPbForSession = await getAdminPb();
+    await recordSession(adminPbForSession, authData.record.id as string, authData.token, req.body?.app, req);
     return res.status(200).json({
       token: authData.token,
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
     });
-  } catch (err) {
+  } catch {
     return res.status(401).json({ error: 'Token refresh failed' });
   }
 });
@@ -346,7 +376,7 @@ router.post('/send-verification', strictAuthLimit, requireUser, async (req: Requ
     const pb = await getAdminPb();
     const user = req.user!;
     const code = generateCode();
-    const expiry = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+    const expiry = new Date(Date.now() + config.verificationCodeExpiryMs).toISOString();
 
     await pb.collection('users').update(user.id, {
       emailVerificationCode: code,
@@ -357,8 +387,8 @@ router.post('/send-verification', strictAuthLimit, requireUser, async (req: Requ
     await sendEmail(user.email, 'Verify your email', verificationEmailTemplate(code));
 
     return res.status(200).json({ success: true, message: 'Verification code sent' });
-  } catch (err) {
-    logger.error('send-verification error:', err);
+  } catch (_err) {
+    logger.error('send-verification error:', _err);
     return res.status(500).json({ error: 'Failed to send verification' });
   }
 });
@@ -441,7 +471,7 @@ const AVATAR_MIME_TYPES: Record<string, string> = {
 };
 const AVATAR_MAX_BYTES = 4 * 1024 * 1024;
 
-router.post('/avatar', requireUser, async (req: Request, res: Response) => {
+router.post('/avatar', avatarLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const { data, contentType } = req.body || {};
     if (typeof data !== 'string' || !data) {
@@ -476,7 +506,7 @@ router.post('/avatar', requireUser, async (req: Request, res: Response) => {
   }
 });
 
-router.delete('/avatar', requireUser, async (req: Request, res: Response) => {
+router.delete('/avatar', avatarLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const updated = await pb.collection('users').update(req.user!.id, { avatar: null });
@@ -521,7 +551,7 @@ router.post('/request-password-reset', strictAuthLimit, async (req: Request, res
       success: true,
       message: 'If an account exists with this email, a password reset link has been sent',
     });
-  } catch (err) {
+  } catch {
     return res.status(200).json({
       success: true,
       message: 'If an account exists with this email, a password reset link has been sent',
@@ -583,13 +613,11 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
     const pb = await getAdminPb();
     const userId = req.user!.id;
 
-    // Upsert characteristics
     if (characteristics && typeof characteristics === 'object') {
       for (const [key, value] of Object.entries(characteristics)) {
         if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
         const strVal = String(value).trim();
 
-        // Validation
         if (key === 'pronouns' && strVal && !PRONOUN_VALUES.includes(strVal)) {
           return res.status(400).json({ error: `Invalid pronoun value. Valid: ${PRONOUN_VALUES.join(', ')}` });
         }
@@ -619,7 +647,6 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
       }
     }
 
-    // Fetch updated profile
     const user = await pb.collection('users').getOne(userId);
     const chars = await safeList(pb, 'user_characteristics', 1, 100, {
       filter: `userId="${userId}"`,
@@ -671,7 +698,6 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
     const pb = await getAdminPb();
     const userId = req.user!.id;
 
-    // Delete existing
     const existing = await pb.collection('user_characteristics').getList(1, 200, {
       filter: `userId="${userId}"`,
     });
@@ -679,7 +705,6 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
       await pb.collection('user_characteristics').delete(c.id);
     }
 
-    // Insert new
     for (const [key, value] of Object.entries(characteristics)) {
       if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
       const strVal = String(value).trim();
@@ -712,9 +737,6 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
 });
 
 // ─── Public App Catalog ─────────────────────────────────────────────
-// Distinct from the /apps routes below (which track what a *logged in*
-// user has installed). This is the public downloads list shown in
-// thay(portal) — no auth required so it can double as a marketing page.
 
 router.get('/catalog', async (_req: Request, res: Response) => {
   try {
@@ -848,7 +870,7 @@ router.get('/health', async (_req: Request, res: Response) => {
       pocketbase: health,
       timestamp: new Date().toISOString(),
     });
-  } catch (err) {
+  } catch {
     return res.status(503).json({
       status: 'error',
       pocketbase: 'unreachable',

@@ -56,6 +56,10 @@
   letter-spacing: 0.05em;
   cursor: pointer;
   user-select: none;
+  background: none;
+  border: none;
+  padding: 0;
+  appearance: none;
 }
 
 .navbar-end {
@@ -72,6 +76,29 @@
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-full);
   transition: background var(--duration-fast) var(--ease-out);
+  background: none;
+  border: none;
+  font: inherit;
+  appearance: none;
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0 var(--space-md);
+  }
+
+  .navbar-end {
+    gap: var(--space-sm);
+  }
+
+  .navbar-username {
+    display: none;
+  }
+
+  .navbar-end .btn-sm {
+    padding: var(--space-xs) var(--space-sm);
+    font-size: 11px;
+  }
 }
 
 .navbar-user:hover {
@@ -121,7 +148,10 @@
 
 .btn-primary {
   background: var(--gradient-pink);
-  color: white;
+  /* black, not white — white-on-pink-gradient is ~2.6:1, fails WCAG AA
+     (4.5:1) at every size this button ships in. Black on this gradient
+     is ~6.2:1. */
+  color: var(--black);
   box-shadow: 0 4px 16px rgba(241, 119, 174, 0.3);
 }
 
@@ -160,6 +190,32 @@
   padding: var(--space-md) var(--space-xl);
 }
 
+/* ─── Link Button (inline text link, real <button> so it's keyboard/SR
+   reachable — <a onClick> with no href is invisible to both) ────── */
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-size: inherit;
+  color: var(--pink-text);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
 /* ─── Inputs ──────────────────────────────────────────────────── */
 
 .input-group {
@@ -173,7 +229,7 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   font-weight: 700;
-  color: rgba(35, 31, 32, 0.6);
+  color: rgba(35, 31, 32, 0.7);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -210,7 +266,7 @@
 
 .input-hint {
   font-size: var(--font-size-xs);
-  color: rgba(35, 31, 32, 0.5);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 .input-hint-error {
@@ -241,7 +297,7 @@
 
 .form-card p.subtitle {
   text-align: center;
-  color: rgba(35, 31, 32, 0.5);
+  color: rgba(35, 31, 32, 0.65);
   margin-bottom: var(--space-xl);
 }
 
@@ -256,7 +312,7 @@
   text-align: center;
   margin-top: var(--space-lg);
   font-size: var(--font-size-sm);
-  color: rgba(35, 31, 32, 0.5);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 /* ─── Steps / Wizard ──────────────────────────────────────────── */
@@ -315,7 +371,7 @@
   justify-content: center;
   font-family: var(--font-display);
   font-size: var(--font-size-3xl);
-  color: white;
+  color: var(--black);
   border: 3px solid var(--pink-dark);
 }
 
@@ -328,7 +384,7 @@
 .profile-handle {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  color: rgba(35, 31, 32, 0.4);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 .profile-bio {
@@ -372,12 +428,18 @@
   border-radius: var(--radius-lg);
   background: white;
   border: 1px solid rgba(241, 119, 174, 0.1);
-  cursor: pointer;
   transition: all var(--duration-base) var(--ease-out);
   text-align: center;
 }
 
-.app-card:hover {
+/* Only cards with a real action get the pointer/hover-lift affordance —
+   installed app cards with no onClick used to look clickable and do
+   nothing. */
+.app-card--action {
+  cursor: pointer;
+}
+
+.app-card--action:hover {
   border-color: var(--pink-dark);
   box-shadow: var(--shadow-md);
   transform: translateY(-2px);
@@ -403,7 +465,7 @@
 
 .app-card-version {
   font-size: var(--font-size-xs);
-  color: rgba(35, 31, 32, 0.4);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 .app-card-badge {
@@ -453,13 +515,13 @@
 
 .catalog-card-tagline {
   font-size: var(--font-size-sm);
-  color: var(--pink-dark);
+  color: var(--pink-text);
   font-weight: 500;
 }
 
 .catalog-card-description {
   font-size: var(--font-size-sm);
-  color: rgba(35, 31, 32, 0.6);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 .catalog-card-footer {
@@ -476,10 +538,26 @@
   position: fixed;
   bottom: var(--space-xl);
   right: var(--space-xl);
+  left: var(--space-xl);
   z-index: 1000;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-sm);
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+}
+
+@media (max-width: 480px) {
+  .toast-container {
+    left: var(--space-md);
+    right: var(--space-md);
+    bottom: var(--space-md);
+    align-items: stretch;
+  }
 }
 
 .toast {
@@ -579,7 +657,7 @@
 
 .device-meta {
   font-size: var(--font-size-xs);
-  color: rgba(35, 31, 32, 0.4);
+  color: rgba(35, 31, 32, 0.65);
 }
 
 /* ─── Pill Select ─────────────────────────────────────────────── */
@@ -685,6 +763,9 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-xl);
+  /* Reserve space for the fixed navbar — without this, tall content
+     (e.g. signup step 3) can start right under/behind it. */
+  padding-top: calc(var(--navbar-height) + var(--space-xl));
 }
 
 .auth-logo {

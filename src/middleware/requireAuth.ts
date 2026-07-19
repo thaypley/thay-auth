@@ -1,7 +1,22 @@
 import { Request, Response, NextFunction } from 'express';
+import type PocketBase from 'pocketbase';
 import { verifyUserToken } from '../providers/pocketbase.js';
-import { verifyDeviceToken, DeviceTokenPayload } from '../providers/jwt.js';
+import { verifyDeviceToken } from '../providers/jwt.js';
+import { hashToken } from '../utils/hashToken.js';
 import { logger } from '../utils/logger.js';
+
+async function isSessionRevoked(pb: PocketBase, token: string): Promise<boolean> {
+  try {
+    const match = await pb.collection('sessions').getList(1, 1, {
+      filter: `tokenHash="${hashToken(token)}"`,
+    });
+    if (match.items.length === 0) return false;
+    return !!(match.items[0] as unknown as Record<string, unknown>).revoked;
+  } catch (err) {
+    logger.warn('isSessionRevoked check failed — failing open', { error: err });
+    return false;
+  }
+}
 
 export interface AuthUser {
   id: string;
@@ -17,6 +32,7 @@ export interface AuthDevice {
 }
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: AuthUser;
@@ -39,6 +55,10 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
   const result = await verifyUserToken(token);
   if (!result) {
     return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+
+  if (await isSessionRevoked(result.pb, token)) {
+    return res.status(401).json({ error: 'Session revoked' });
   }
 
   req.user = {

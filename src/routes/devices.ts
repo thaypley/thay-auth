@@ -1,8 +1,9 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { createClient, getAdminPb } from '../providers/pocketbase.js';
+import { getAdminPb } from '../providers/pocketbase.js';
 import { signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
+import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -28,7 +29,7 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
     const token = generateToken();
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+    const expiresAt = new Date(Date.now() + config.tokenExpiryMs).toISOString();
 
     const device = await pb.collection('devices').create({
       userId: req.user!.id,
@@ -138,7 +139,7 @@ router.post('/verify', async (req: Request, res: Response) => {
       deviceId: payload.deviceId,
       scopes: payload.scopes,
     });
-  } catch (err) {
+  } catch {
     return res.status(500).json({ valid: false, error: 'Verification failed' });
   }
 });

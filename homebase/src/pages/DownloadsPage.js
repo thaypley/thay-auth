@@ -32,15 +32,17 @@ export default async function DownloadsPage(container) {
   try {
     apps = await auth.getCatalog();
   } catch (err) {
-    grid.appendChild(h('p', { className: 'input-hint-error', style: { textAlign: 'center' } }, [
-      'Could not load the catalog right now — try again shortly.',
+    grid.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center', gridColumn: '1 / -1' } }, [
+      h('h3', {}, ['something broke']),
+      h('p', { className: 'input-hint-error' }, ['could not load the catalog right now — try again shortly.']),
+      h('button', { className: 'btn btn-primary btn-sm', onClick: () => location.reload() }, ['retry']),
     ]));
     return;
   }
 
   if (!apps.length) {
     grid.appendChild(h('p', { className: 'input-hint', style: { textAlign: 'center' } }, [
-      'No downloads published yet — check back soon.',
+      'no downloads published yet — check back soon.',
     ]));
     return;
   }

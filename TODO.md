@@ -1,3 +1,11 @@
+## 2026-07-17 (later) — thay-tunes-desktop wiring: investigated, left parked
+
+Checked the actual `thaypley-tunes-desktop` repo before wiring anything. Found the "Wire `thaypley-tunes-desktop` via device-token flow" item below (from 07-14/07-15) is **stale** — a later session in that repo (`tasks/todo.md`, 2026-07-15 "Local-first MVP") deliberately removed the login gate so the app works fully offline, and set `PLATFORM_ENABLED = false` (`src/config/features.ts`) to park wallet/streams/ads/catalog until thaypley.com's platform side is back online. `LoginScreen.jsx` is confirmed dead/unmounted — `App.jsx` never renders it.
+
+Also found `src/services/api.ts` in that repo doesn't point at thay-auth at all — it hits `https://thaypley.com/api` (not `auth.thaypley.com`), with `/auth/login` expecting `{username, password}` (thay-auth expects `{identity, password}`), plus `/wallet`, `/streams`, `/ads`, `/catalog` routes that live on a separate platform API service, not thay-auth. So "wiring device-token flow" was never going to be a small patch — it needs a real integration pass (correct base URL, correct login payload shape, add the `/devices/pair` step) whenever `PLATFORM_ENABLED` actually flips back on.
+
+**Decision (confirmed with user 2026-07-17): leave it parked.** Not touching `thaypley-tunes-desktop` now. When `PLATFORM_ENABLED` flips, revisit: point its auth calls at `auth.thaypley.com`, fix the `identity`/`username` field mismatch, add device pairing, and pass `app: "tunes"` on login (now supported server-side per the token-scoping work below) so its sessions are labeled correctly from day one.
+
 ## 2026-07-17 — Premortem Audit + Downloads Catalog
 
 Full write-up: `PREMORTEM.md`. Summary:
