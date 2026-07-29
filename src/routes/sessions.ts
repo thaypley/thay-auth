@@ -2,14 +2,19 @@ import { Router, Request, Response } from 'express';
 import { getAdminPb } from '../providers/pocketbase.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { logger } from '../utils/logger.js';
+import { escapePbFilterValue } from '../utils/filterEscape.js';
 
 const router = Router();
 
 router.get('/', requireUser, async (req: Request, res: Response) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const perPage = Math.min(parseInt(req.query.per_page as string, 10) || 20, 50);
+
     const pb = await getAdminPb();
-    const sessions = await pb.collection('sessions').getFullList({
-      filter: `userId="${req.user!.id}"`,
+    const sessions = await pb.collection('sessions').getList(page, perPage, {
+      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
+      sort: '-created',
     });
 
     const result = (sessions as unknown as Record<string, unknown>[]).map(s => ({
@@ -23,7 +28,15 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
       revoked: s.revoked || false,
     }));
 
-    return res.status(200).json({ sessions: result });
+    return res.status(200).json({
+      sessions: result,
+      pagination: {
+        page: sessions.page,
+        perPage: sessions.perPage,
+        total: sessions.totalItems,
+        pages: Math.ceil(sessions.totalItems / sessions.perPage),
+      },
+    });
   } catch (err) {
     logger.error('list sessions error:', err);
     return res.status(500).json({ error: 'Failed to list sessions' });

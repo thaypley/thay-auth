@@ -8,8 +8,11 @@ export type AppSlug = typeof KNOWN_APPS[number];
 
 export const DEFAULT_APP: AppSlug = 'homebase';
 
+// Pre-compute a Set for O(1) membership testing (critical for hot path in recordSession)
+const APP_SLUG_SET = new Set(KNOWN_APPS);
+
 export function normalizeApp(value: unknown): AppSlug {
-  if (typeof value === 'string' && (KNOWN_APPS as readonly string[]).includes(value)) {
+  if (typeof value === 'string' && (APP_SLUG_SET as Set<string>).has(value)) {
     return value as AppSlug;
   }
   return DEFAULT_APP;

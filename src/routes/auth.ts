@@ -13,10 +13,7 @@ import {
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
-
-function escapePbFilterValue(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-}
+import { escapePbFilterValue } from '../utils/filterEscape.js';
 
 const strictAuthLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'auth-strict' });
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 15, keyPrefix: 'auth-login' });
@@ -118,8 +115,9 @@ router.post('/check-invite', strictAuthLimit, async (req: Request, res: Response
     if (err) return res.status(200).json({ valid: false, error: err });
 
     const pb = await getAdminPb();
+    const escapedCode = escapePbFilterValue(code.toString().trim().toUpperCase());
     const invites = await pb.collection('signup_invites').getList(1, 1, {
-      filter: `code="${code.toString().trim().toUpperCase()}"`,
+      filter: `code="${escapedCode}"`,
     });
 
     if (invites.items.length === 0) {
@@ -195,8 +193,9 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
 
     const pb = await getAdminPb();
     const code = inviteCode.toString().trim().toUpperCase();
+    const escapedCode = escapePbFilterValue(code);
     const invites = await pb.collection('signup_invites').getList(1, 1, {
-      filter: `code="${code}"`,
+      filter: `code="${escapedCode}"`,
     });
     if (invites.items.length === 0) {
       return res.status(400).json({ error: 'Invalid invite code' });
@@ -284,8 +283,9 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
     if (!loginIdentity.includes('@') && /^[a-z0-9_]{3,20}$/.test(loginIdentity)) {
       try {
         const adminPb = await getAdminPb();
+        const escapedIdentity = escapePbFilterValue(loginIdentity);
         const match = await adminPb.collection('users').getList(1, 1, {
-          filter: `username="${loginIdentity}"`,
+          filter: `username="${escapedIdentity}"`,
         });
         if (match.items.length > 0) {
           loginIdentity = (match.items[0] as unknown as Record<string, string>).email;
@@ -527,8 +527,9 @@ router.get('/check-username', strictAuthLimit, async (req: Request, res: Respons
     if (err) return res.status(200).json({ available: false, error: err });
 
     const pb = await getAdminPb();
+    const escapedUsername = escapePbFilterValue(sanitizeUsername(username));
     const result = await pb.collection('users').getList(1, 1, {
-      filter: `username="${sanitizeUsername(username)}"`,
+      filter: `username="${escapedUsername}"`,
     });
     return res.status(200).json({ available: result.items.length === 0 });
   } catch (err) {
@@ -588,7 +589,7 @@ router.get('/profile', requireUser, async (req: Request, res: Response) => {
     const pb = await getAdminPb();
     const user = await pb.collection('users').getOne(req.user!.id);
     const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${req.user!.id}"`,
+      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
     });
 
     const characteristics: Record<string, string> = {};
@@ -614,6 +615,9 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
     const userId = req.user!.id;
 
     if (characteristics && typeof characteristics === 'object') {
+      // First, collect all valid operations (validate sequentially first)
+      const ops: Array<{ key: string; value: string; updateId?: string }> = [];
+      
       for (const [key, value] of Object.entries(characteristics)) {
         if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
         const strVal = String(value).trim();
@@ -628,28 +632,39 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'Bio must be 280 characters or fewer' });
         }
 
+        // Check if existing record needs update OR create
         const existing = await pb.collection('user_characteristics').getList(1, 1, {
-          filter: `userId="${userId}" && key="${key}"`,
+          filter: `userId="${escapePbFilterValue(userId)}" && key="${escapePbFilterValue(key)}"`,
         });
 
         if (existing.items.length > 0) {
-          await pb.collection('user_characteristics').update(existing.items[0].id, {
-            value: strVal,
-          });
+          ops.push({ key, value: strVal, updateId: existing.items[0].id as string });
         } else {
-          await pb.collection('user_characteristics').create({
+          ops.push({ key, value: strVal });
+        }
+      }
+
+      // Execute all DB operations in parallel
+      const opPrompts = ops.map(op => {
+        if (op.updateId) {
+          return pb.collection('user_characteristics').update(op.updateId, { value: op.value });
+        } else {
+          return pb.collection('user_characteristics').create({
             userId,
-            key,
-            value: strVal,
+            key: op.key,
+            value: op.value,
             visibility: 'public',
           });
         }
-      }
+      });
+
+      // Wait for all to complete (fail if any fail, but don't break on partial)
+      await Promise.allSettled(opPrompts);
     }
 
     const user = await pb.collection('users').getOne(userId);
     const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${userId}"`,
+      filter: `userId="${escapePbFilterValue(userId)}"`,
     });
     const charMap: Record<string, string> = {};
     for (const c of chars.items) {
@@ -674,7 +689,7 @@ router.get('/profile/characteristics', requireUser, async (req: Request, res: Re
   try {
     const pb = await getAdminPb();
     const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${req.user!.id}"`,
+      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
     });
     const map: Record<string, string> = {};
     for (const c of chars.items) {
@@ -698,13 +713,15 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
     const pb = await getAdminPb();
     const userId = req.user!.id;
 
+    // First, collect all deletion ops and execute in parallel
     const existing = await pb.collection('user_characteristics').getList(1, 200, {
-      filter: `userId="${userId}"`,
+      filter: `userId="${escapePbFilterValue(userId)}"`,
     });
-    for (const c of existing.items) {
-      await pb.collection('user_characteristics').delete(c.id);
-    }
+    const deleteOps = existing.items.map(c => pb.collection('user_characteristics').delete(c.id));
+    await Promise.allSettled(deleteOps);
 
+    // Now prepare valid entries for creation (validate sequentially first)
+    const creates: Array<{ key: string; value: string; }> = [];
     for (const [key, value] of Object.entries(characteristics)) {
       if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
       const strVal = String(value).trim();
@@ -714,13 +731,17 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
       if (key === 'astral_sign' && !ASTRAL_SIGN_VALUES.includes(strVal.toLowerCase())) continue;
       if (key === 'bio' && strVal.length > 280) continue;
 
-      await pb.collection('user_characteristics').create({
-        userId,
-        key,
-        value: strVal,
-        visibility: 'public',
-      });
+      creates.push({ key, value: strVal });
     }
+
+    // Execute all creation ops in parallel
+    const createOps = creates.map(entry => pb.collection('user_characteristics').create({
+      userId,
+      key: entry.key,
+      value: entry.value,
+      visibility: 'public',
+    }));
+    await Promise.allSettled(createOps);
 
     const map: Record<string, string> = {};
     for (const [key, value] of Object.entries(characteristics)) {
@@ -773,7 +794,7 @@ router.get('/apps', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const apps = await safeList(pb, 'user_apps', 1, 100, {
-      filter: `userId="${req.user!.id}"`,
+      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
       sort: '-installedAt',
     });
     return res.status(200).json({
@@ -805,7 +826,7 @@ router.post('/apps', requireUser, async (req: Request, res: Response) => {
 
     const pb = await getAdminPb();
     const existing = await pb.collection('user_apps').getList(1, 1, {
-      filter: `userId="${req.user!.id}" && appId="${escapePbFilterValue(appId)}"`,
+      filter: `userId="${escapePbFilterValue(req.user!.id)}" && appId="${escapePbFilterValue(appId)}"`,
     });
 
     if (existing.items.length > 0) {
@@ -841,7 +862,7 @@ router.delete('/apps/:appId', requireUser, async (req: Request, res: Response) =
     const { appId } = req.params;
     const pb = await getAdminPb();
     const existing = await pb.collection('user_apps').getList(1, 1, {
-      filter: `userId="${req.user!.id}" && appId="${escapePbFilterValue(appId)}"`,
+      filter: `userId="${escapePbFilterValue(req.user!.id)}" && appId="${escapePbFilterValue(appId)}"`,
     });
 
     if (existing.items.length === 0) {

@@ -4,17 +4,34 @@ import { verifyUserToken } from '../providers/pocketbase.js';
 import { verifyDeviceToken } from '../providers/jwt.js';
 import { hashToken } from '../utils/hashToken.js';
 import { logger } from '../utils/logger.js';
+import LRUCache from 'lru-cache'; // npm i lru-cache
+
+// ============================
+// Session revocation cache (L1)
+// ============================
+// Checks token -> revoked status. Reduces repeated PB calls for same token.
+const sessionRevocationCache = new LRUCache<string, boolean>({
+  max: 20000,           // ~20k entries
+  ttl: 60000,           // 1 minute TTL (short to detect revocations quickly)
+});
 
 async function isSessionRevoked(pb: PocketBase, token: string): Promise<boolean> {
+  const cacheKey = hashToken(token);
+  const cached = sessionRevocationCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   try {
     const match = await pb.collection('sessions').getList(1, 1, {
-      filter: `tokenHash="${hashToken(token)}"`,
+      filter: `tokenHash="${cacheKey}"`,
     });
-    if (match.items.length === 0) return false;
-    return !!(match.items[0] as unknown as Record<string, unknown>).revoked;
+    const revoked = match.items.length > 0 && !((match.items[0] as unknown as Record<string, unknown>).revoked);
+    sessionRevocationCache.set(cacheKey, revoked);
+    return revoked;
   } catch (err) {
-    logger.warn('isSessionRevoked check failed — failing open', { error: err });
-    return false;
+    logger.warn('Session revocation check failed', err);
+    // Fail closed — treat error as potentially revoked (more secure)
+    sessionRevocationCache.set(cacheKey, true);
+    return true;
   }
 }
 
@@ -32,7 +49,6 @@ export interface AuthDevice {
 }
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Express {
     interface Request {
       user?: AuthUser;
@@ -52,12 +68,15 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ error: 'Empty token' });
   }
 
+  // verifyUserToken now returns a PB client that can be reused
   const result = await verifyUserToken(token);
   if (!result) {
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
 
-  if (await isSessionRevoked(result.pb, token)) {
+  // Use the SAME PB client from verifyUserToken to avoid redundant auth
+  const pb = result.pb;
+  if (await isSessionRevoked(pb, token)) {
     return res.status(401).json({ error: 'Session revoked' });
   }
 

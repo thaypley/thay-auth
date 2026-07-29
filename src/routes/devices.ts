@@ -5,6 +5,7 @@ import { signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { escapePbFilterValue } from '../utils/filterEscape.js';
 
 const router = Router();
 
@@ -88,9 +89,13 @@ router.delete('/unpair', requireUser, async (req: Request, res: Response) => {
 
 router.get('/', requireUser, async (req: Request, res: Response) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
+    const perPage = Math.min(parseInt(req.query.per_page as string, 10) || 20, 50); // cap at 50
+
     const pb = await getAdminPb();
-    const devices = await pb.collection('devices').getFullList({
-      filter: `userId="${req.user!.id}"`,
+    const devices = await pb.collection('devices').getList(page, perPage, {
+      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
+      sort: '-createdAt',
     });
 
     const result = (devices as unknown as Record<string, unknown>[]).map(d => ({
@@ -99,11 +104,18 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
       scopes: d.scopes,
       lastSeenAt: d.lastSeenAt,
       expiresAt: d.expiresAt,
-      revoked: d.revoked || false,
-      created: d.created,
+      revoked: d.revoked,
     }));
 
-    return res.status(200).json({ devices: result });
+    return res.status(200).json({
+      devices: result,
+      pagination: {
+        page: devices.page,
+        perPage: devices.perPage,
+        total: devices.totalItems,
+        pages: Math.ceil(devices.totalItems / devices.perPage),
+      },
+    });
   } catch (err) {
     logger.error('list devices error:', err);
     return res.status(500).json({ error: 'Failed to list devices' });
