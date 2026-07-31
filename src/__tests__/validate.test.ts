@@ -35,7 +35,6 @@ describe('validatePassword', () => {
   it('accepts valid passwords (8+ chars)', () => {
     expect(validatePassword('password123')).toBeNull();
     expect(validatePassword('a'.repeat(8))).toBeNull();
-    expect(validatePassword('a'.repeat(128))).toBeNull();
   });
 
   it('rejects short passwords', () => {
@@ -45,6 +44,15 @@ describe('validatePassword', () => {
 
   it('rejects overly long passwords', () => {
     expect(validatePassword('a'.repeat(129))).toBe('Password must be at most 128 characters');
+  });
+
+  it('rejects passwords over 72 UTF-8 bytes (bcrypt truncation)', () => {
+    // 72 ASCII chars is fine
+    expect(validatePassword('a'.repeat(72))).toBeNull();
+    // 73 ASCII chars exceeds bcrypt's 72-byte limit
+    expect(validatePassword('a'.repeat(73))).toBe('Password must be at most 72 bytes');
+    // multibyte: 50 emoji = 200 bytes > 72, even though length is only 50
+    expect(validatePassword('😀'.repeat(50))).toBe('Password must be at most 72 bytes');
   });
 
   it('rejects non-string input', () => {

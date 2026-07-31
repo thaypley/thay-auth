@@ -1,7 +1,8 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { createClient, getAdminPb } from '../providers/pocketbase.js';
-import { createUserDirect } from '../providers/directSqlUsers.js';
+import { createUserDirect, userExistsDirect, redeemInviteDirect } from '../providers/directSqlUsers.js';
+import { signUserToken } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
@@ -201,6 +202,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid invite code' });
     }
     const invite = invites.items[0] as unknown as Record<string, unknown>;
+    const inviteId = invite.id as string;
     const maxUses = (invite.maxUses as number) || 1;
     const useCount = (invite.useCount as number) || 0;
     if (useCount >= maxUses) {
@@ -215,7 +217,19 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
     if (monthDiff < 0 || (monthDiff === 0 && new Date().getDate() < birthDate.getDate())) age--;
 
     let userId: string;
+    let redeemSucceeded = false;
     if (config.directSqlUsers) {
+      // Pre-check duplicates before spending a bcrypt round. The unique
+      // indexes are the real enforcement; this only short-circuits the
+      // common case and returns a stable, non-enumerable error.
+      const dupes = userExistsDirect(config.pbDataPath, normalizedEmail, sanitizedUsername);
+      if (dupes.email) {
+        return res.status(400).json({ error: 'An account with this email already exists' });
+      }
+      if (dupes.username) {
+        return res.status(400).json({ error: 'An account with this username already exists' });
+      }
+
       const created = await createUserDirect(config.pbDataPath, {
         email: normalizedEmail,
         password,
@@ -227,6 +241,14 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         tier: 'free',
       });
       userId = created.id;
+
+      // Atomic compare-and-swap on useCount — two concurrent signups with
+      // the same code can't both pass. If we lost the race, undo the user.
+      redeemSucceeded = redeemInviteDirect(config.pbDataPath, inviteId, maxUses, userId);
+      if (!redeemSucceeded) {
+        try { await pb.collection('users').delete(userId); } catch { /* best effort */ }
+        return res.status(400).json({ error: 'Invite code has been fully used' });
+      }
     } else {
       const created = await pb.collection('users').create({
         email: normalizedEmail,
@@ -240,17 +262,18 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         tier: 'free',
       });
       userId = (created as unknown as Record<string, string>).id;
-    }
 
-    try {
-      await pb.collection('signup_invites').update(invite.id as string, {
-        useCount: useCount + 1,
-        used: useCount + 1 >= maxUses,
-        usedBy: userId,
-        usedAt: new Date().toISOString(),
-      });
-    } catch (_redeemErr) {
-      logger.warn('Failed to redeem invite:', _redeemErr);
+      try {
+        await pb.collection('signup_invites').update(inviteId, {
+          useCount: useCount + 1,
+          used: useCount + 1 >= maxUses,
+          usedBy: userId,
+          usedAt: new Date().toISOString(),
+        });
+        redeemSucceeded = true;
+      } catch (_redeemErr) {
+        logger.warn('Failed to redeem invite:', _redeemErr);
+      }
     }
 
     const userPb = createClient();
@@ -262,11 +285,13 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
     return res.status(201).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
       token: authData.token,
+      sessionToken: signUserToken(userId, normalizeApp(app), authData.token),
     });
   } catch (err: unknown) {
     logger.error('signup error:', err);
-    const msg = (err as { message?: string; data?: { message?: string } })?.data?.message || (err as Error)?.message || 'Signup failed';
-    return res.status(400).json({ error: msg });
+    // Fail generically — never leak whether an email/username is taken via
+    // PB's raw error (that's the enumeration fix).
+    return res.status(400).json({ error: 'Signup failed' });
   }
 });
 
@@ -304,6 +329,7 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
         error: 'Email not verified',
         code: 'EMAIL_NOT_VERIFIED',
         token: authData.token,
+        sessionToken: signUserToken(authData.record.id as string, normalizeApp(app), authData.token),
         user: sanitizeUser(record),
       });
     }
@@ -313,6 +339,7 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
     return res.status(200).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
       token: authData.token,
+      sessionToken: signUserToken(authData.record.id as string, normalizeApp(app), authData.token),
       expiry: Date.now() + config.tokenExpiryMs,
     });
   } catch (err) {
@@ -362,6 +389,7 @@ router.post('/refresh', requireUser, async (req: Request, res: Response) => {
     await recordSession(adminPbForSession, authData.record.id as string, authData.token, req.body?.app, req);
     return res.status(200).json({
       token: authData.token,
+      sessionToken: signUserToken(authData.record.id as string, normalizeApp(req.body?.app), authData.token),
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
     });
   } catch {
@@ -396,7 +424,7 @@ router.post('/send-verification', strictAuthLimit, requireUser, async (req: Requ
 router.post('/verify-email', strictAuthLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const { code } = req.body;
-    if (!code) return res.status(400).json({ error: 'Verification code required' });
+    if (typeof code !== 'string' || !code) return res.status(400).json({ error: 'Verification code required' });
 
     const pb = await getAdminPb();
     const user = await pb.collection('users').getOne(req.user!.id);
@@ -404,7 +432,13 @@ router.post('/verify-email', strictAuthLimit, requireUser, async (req: Request, 
     const storedCode = (user as unknown as Record<string, unknown>).emailVerificationCode as string;
     const expiry = (user as unknown as Record<string, unknown>).emailVerificationCodeExpiry as string;
 
-    if (!storedCode || storedCode !== code) {
+    // Timing-safe compare (constant-time against a 6-digit code): hash both
+    // sides to equal-length buffers so a length difference can't leak either.
+    const input = crypto.createHash('sha256').update(code.trim()).digest();
+    const stored = crypto.createHash('sha256').update(storedCode || '').digest();
+    const codesMatch = storedCode !== '' && crypto.timingSafeEqual(input, stored);
+
+    if (!codesMatch) {
       return res.status(400).json({ error: 'Invalid verification code' });
     }
     if (expiry && new Date(expiry) < new Date()) {

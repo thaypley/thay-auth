@@ -12,6 +12,12 @@ export function validatePassword(password: unknown): string | null {
   if (typeof password !== 'string' || !password) return 'Password is required';
   if (password.length < 8) return 'Password must be at least 8 characters';
   if (password.length > 128) return 'Password must be at most 128 characters';
+  // bcrypt truncates at 72 bytes — a longer password silently degrades to
+  // its first 72 bytes (two long passwords sharing that prefix collide).
+  // Reject outright so users never think a longer password is stronger.
+  if (Buffer.byteLength(password, 'utf8') > 72) {
+    return 'Password must be at most 72 bytes';
+  }
   return null;
 }
 

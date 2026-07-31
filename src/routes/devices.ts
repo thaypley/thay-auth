@@ -9,6 +9,23 @@ import { escapePbFilterValue } from '../utils/filterEscape.js';
 
 const router = Router();
 
+// Allowlist of device token scopes — a client cannot invent scopes beyond
+// what the platform defines. Add new scopes here as surfaces onboard.
+const KNOWN_SCOPES = new Set(['relay:chat', 'relay:du']);
+
+function normalizeScopes(scopes: unknown): string[] {
+  const base = Array.isArray(scopes) ? scopes : [];
+  const cleaned = base
+    .filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
+    .map((s) => s.trim());
+  const seen = new Set<string>();
+  return cleaned.filter((s) => {
+    if (seen.has(s)) return false;
+    seen.add(s);
+    return true;
+  });
+}
+
 function generateToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(64);
@@ -26,6 +43,13 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Device label is required' });
     }
 
+    const normalizedScopes = normalizeScopes(scopes);
+    const unknown = normalizedScopes.filter((s) => !KNOWN_SCOPES.has(s));
+    if (unknown.length > 0) {
+      return res.status(400).json({ error: `Unknown device scopes: ${unknown.join(', ')}` });
+    }
+    const finalScopes = normalizedScopes.length > 0 ? normalizedScopes : ['relay:chat', 'relay:du'];
+
     const pb = await getAdminPb();
     const token = generateToken();
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
@@ -36,7 +60,7 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
       userId: req.user!.id,
       tokenHash,
       label: label.trim(),
-      scopes: scopes || ['relay:chat', 'relay:du'],
+      scopes: finalScopes,
       expiresAt,
       revoked: false,
     });
@@ -44,7 +68,7 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
     const deviceToken = signDeviceToken(
       device.id as string,
       req.user!.id,
-      scopes || ['relay:chat', 'relay:du'],
+      finalScopes,
     );
 
     logger.info(`Device paired: ${label} for user ${req.user!.id}`);

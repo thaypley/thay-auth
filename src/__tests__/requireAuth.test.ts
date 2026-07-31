@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type PocketBase from 'pocketbase';
-import { isSessionRevoked, requireUser } from '../middleware/requireAuth.js';
+import { isSessionRevoked, requireUser, requireUserForApp } from '../middleware/requireAuth.js';
 
 vi.mock('../providers/pocketbase.js', () => ({
   verifyUserToken: vi.fn(),
 }));
 
 import { verifyUserToken } from '../providers/pocketbase.js';
+import { signUserToken, signDeviceToken } from '../providers/jwt.js';
 
 // ─── isSessionRevoked (the logic that regressed in a646e72) ─────────
 
@@ -120,5 +121,79 @@ describe('requireUser', () => {
     expect(res.statusCode).toBe(401);
     expect(res.body).toEqual({ error: 'Session revoked' });
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+// ─── wrapped (aud-scoped) token path ────────────────────────────────
+
+describe('requireUser (wrapped token)', () => {
+  it('accepts a wrapped token and verifies the inner PB token', async () => {
+    (verifyUserToken as any).mockResolvedValue({ user: activeUser, pb: mockPb([{ revoked: false }]) });
+    const wrapped = signUserToken('u1', 'tunes', 'inner-pb-token');
+    const req = mockRequest(`Bearer ${wrapped}`);
+    const res = mockResponse();
+    await requireUser(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user.id).toBe('u1');
+    expect(req.user.aud).toBe('tunes');
+  });
+
+  it('rejects a wrapped token whose inner PB token is invalid', async () => {
+    (verifyUserToken as any).mockResolvedValue(null);
+    const wrapped = signUserToken('u1', 'tunes', 'bad-inner');
+    const res = mockResponse();
+    await requireUser(mockRequest(`Bearer ${wrapped}`), res, next);
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a wrapped token whose session is revoked', async () => {
+    (verifyUserToken as any).mockResolvedValue({ user: activeUser, pb: mockPb([{ revoked: true }]) });
+    const wrapped = signUserToken('u1', 'tunes', 'inner-pb-token-revoked');
+    const res = mockResponse();
+    await requireUser(mockRequest(`Bearer ${wrapped}`), res, next);
+    expect(res.statusCode).toBe(401);
+    expect(res.body).toEqual({ error: 'Session revoked' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('treats a device token as invalid for requireUser', async () => {
+    const deviceTok = signDeviceToken('dev1', 'u1', ['relay:chat']);
+    (verifyUserToken as any).mockResolvedValue(null);
+    const res = mockResponse();
+    await requireUser(mockRequest(`Bearer ${deviceTok}`), res, next);
+    expect(res.statusCode).toBe(401);
+  });
+});
+
+// ─── requireUserForApp (aud enforcement) ────────────────────────────
+
+describe('requireUserForApp', () => {
+  it('rejects a wrapped token minted for a different app', async () => {
+    const wrapped = signUserToken('u1', 'tunes', 'inner-pb-token');
+    const res = mockResponse();
+    await requireUserForApp(['homebase'])(mockRequest(`Bearer ${wrapped}`), res, next);
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ error: 'Token not valid for this app' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('accepts a wrapped token for an allowed app', async () => {
+    (verifyUserToken as any).mockResolvedValue({ user: activeUser, pb: mockPb([{ revoked: false }]) });
+    const wrapped = signUserToken('u1', 'tunes', 'inner-pb-token');
+    const req = mockRequest(`Bearer ${wrapped}`);
+    const res = mockResponse();
+    await requireUserForApp(['tunes', 'studio'])(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user.aud).toBe('tunes');
+  });
+
+  it('allows a legacy raw PB token through (no aud claim, homebase compat)', async () => {
+    (verifyUserToken as any).mockResolvedValue({ user: activeUser, pb: mockPb([{ revoked: false }]) });
+    const req = mockRequest('Bearer raw-pb-token');
+    const res = mockResponse();
+    await requireUserForApp(['homebase'])(req, res, next);
+    expect(next).toHaveBeenCalled();
+    expect(req.user.aud).toBeUndefined();
   });
 });

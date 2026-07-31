@@ -154,3 +154,52 @@ export async function createUserDirect(
     updated: now,
   };
 }
+
+/**
+ * Check whether an email or username already exists. The direct-SQL path
+ * bypasses PB's admin API, so duplicate checks must happen here (the
+ * unique indexes are the real enforcement; this is a fast-path error that
+ * avoids a wasted bcrypt + insert).
+ */
+export function userExistsDirect(
+  dbPath: string,
+  email: string,
+  username: string,
+): { email: boolean; username: boolean } {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const byEmail = db.prepare('SELECT 1 FROM users WHERE email = ? LIMIT 1').get(email);
+    const byUsername = db.prepare('SELECT 1 FROM users WHERE username = ? LIMIT 1').get(username);
+    return { email: !!byEmail, username: !!byUsername };
+  } finally {
+    db.close();
+  }
+}
+
+/**
+ * Atomically redeem an invite (compare-and-swap on useCount) so two
+ * concurrent signups with the same code can't both pass the check — the
+ * PB-admin path reads-then-writes (TOCTOU). Returns the invite id when the
+ * row was actually updated, or null when the code is exhausted/absent.
+ */
+export function redeemInviteDirect(
+  dbPath: string,
+  inviteId: string,
+  maxUses: number,
+  userId: string,
+): boolean {
+  const db = new DatabaseSync(dbPath, { readOnly: false });
+  try {
+    const result = db.prepare(
+      `UPDATE signup_invites
+         SET useCount = useCount + 1,
+             used = (useCount + 1 >= ?),
+             usedBy = ?,
+             usedAt = ?
+       WHERE id = ? AND useCount < ?`,
+    ).run(maxUses, userId, pbNow(), inviteId, maxUses);
+    return (result.changes ?? 0) > 0;
+  } finally {
+    db.close();
+  }
+}
