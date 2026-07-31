@@ -15,7 +15,7 @@ const sessionRevocationCache = new LRUCache<string, boolean>({
   ttl: 60000,           // 1 minute TTL (short to detect revocations quickly)
 });
 
-async function isSessionRevoked(pb: PocketBase, token: string): Promise<boolean> {
+export async function isSessionRevoked(pb: PocketBase, token: string): Promise<boolean> {
   const cacheKey = hashToken(token);
   const cached = sessionRevocationCache.get(cacheKey);
   if (cached !== undefined) return cached;
@@ -24,9 +24,13 @@ async function isSessionRevoked(pb: PocketBase, token: string): Promise<boolean>
     const match = await pb.collection('sessions').getList(1, 1, {
       filter: `tokenHash="${cacheKey}"`,
     });
-    const revoked = match.items.length > 0 && !((match.items[0] as unknown as Record<string, unknown>).revoked);
-    sessionRevocationCache.set(cacheKey, revoked);
-    return revoked;
+    // A session is revoked only when a matching row exists AND its `revoked`
+    // flag is true. No row = pre-rollout token or session not recorded → not
+    // revoked (fail open, matching pre-cache behavior). A live row with
+    // revoked=false → not revoked.
+    const isRevoked = match.items.length > 0 && !!((match.items[0] as unknown as Record<string, unknown>).revoked);
+    sessionRevocationCache.set(cacheKey, isRevoked);
+    return isRevoked;
   } catch (err) {
     logger.warn('Session revocation check failed', err);
     // Fail closed — treat error as potentially revoked (more secure)

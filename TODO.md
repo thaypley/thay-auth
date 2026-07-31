@@ -1,3 +1,34 @@
+## 2026-07-31 — Session Handoff (Phase 0: Stabilize, part 1)
+
+### Context
+Full three-part audit completed (design / security / build-CI-SDK), 12 decision questions answered, and a 4-phase refactor plan was drafted & approved (`Phase 0 Stabilize → 1 Secure → 2 Cosmic redesign → 3 Enrich → 4 Platform-grade infra`). Full plan lives in the prior session's output. Phase 2's design target is thay-jot's vibe system (`thay-jot/src/styles/{global,vibes,motion,dsl}.css` — 7 themes, COSMIC default `#1a0a2e`, glass `blur(28px) saturate(1.9)`, spring `cubic-bezier(0.34,1.56,0.64,1)`, STALPH everywhere).
+
+### Completed (uncommitted, all on `main`)
+- **FIXED the CRITICAL inverted session-revocation bug** (`src/middleware/requireAuth.ts`): `isSessionRevoked` returned `true` for *valid* sessions (introduced in `a646e72`) → every legit user got 401, revoked tokens passed. Now: revoked = row exists && `revoked===true`; fail-open on no row, fail-closed on error. Exported for testing.
+- **FIXED `verifyUserToken` cache-hit shape** (`src/providers/pocketbase.ts`): cache stored only `{userId}`, so `req.user.email/username` were `undefined` on cache hits; now caches the full user record.
+- **FIXED the broken build**: `vitest@^4.1.10` restored to devDeps (removed in `a646e72`, breaking `npm run build` via TS2307 and the Docker deploy), `build` now `rm -rf dist && tsc -p tsconfig.build.json` with a new `tsconfig.build.json` excluding `src/__tests__` (tests no longer ship in the prod image), `eslint.config.js` allows declaration-only namespaces (`declare global { namespace Express }`) + `npm audit fix` cleared the brace-expansion advisory.
+- **ADDED regression tests** `src/__tests__/requireAuth.test.ts` (5 isSessionRevoked + 5 requireUser composition tests via `vi.mock`).
+
+### Verified
+- `npm test` → **68 passed (9 files)** — NOTE: must run with `CI=1` (i.e. `CI=1 npm test`) — plain `npm test` hangs in this sandbox.
+- `npm run build` → clean exit, no `dist/__tests__`.
+- `npm run lint` → clean — but **eslint takes ~26s just to boot** on this volume-mounted FS; needs ≥300s timeout, it is NOT a hang (earlier 120s timeouts aborted it mid-run; a full `npm run lint > /tmp/lint.log` was aborted by user before confirming final exit code — re-run to confirm).
+
+### Blockers / gotchas
+- `eslint` boot is ~26s (slow `/Volumes/stalphXO` volume) — use generous timeouts.
+- `CI=1 npm test` required (vitest hangs on TTY otherwise).
+- `.env` in repo root holds REAL prod secrets (gitignored) — rotate if it ever left the machine.
+- Work is **uncommitted** on `main` — commit as the Phase-0 unit (suggested message: `fix: inverted session-revocation logic + cache-hit shape; restore vitest/build`).
+
+### Next Session (Phase 0 remaining + Phase 1)
+- [ ] Confirm final `npm run lint` exit code (was mid-run when session ended), then **commit Phase 0** changes on `main`.
+- [ ] Add `tokenHash` indexes on `sessions` + `devices` (migration 012) — hottest query, currently full scan.
+- [ ] Check PB hook live/deployed status on VPS; wire `pb_hooks/` sync into `scripts/deploy.sh`.
+- [ ] Deploy the session-revocation fix to prod (it may be live-breaking right now if `a646e72` is deployed — verify `/auth/me` for a real user).
+- [ ] Phase 1 (Secure & Contain): dedicated auth-only PocketBase instance + data migration, aud-scoped thay-auth JWT (option a), signup error/email-enumeration fixes, device scopes allowlist, password ≤72-byte cap, timingSafeEqual, cleanup cron.
+
+---
+
 ## 2026-07-17 (later) — thay-tunes-desktop wiring: investigated, left parked
 
 Checked the actual `thaypley-tunes-desktop` repo before wiring anything. Found the "Wire `thaypley-tunes-desktop` via device-token flow" item below (from 07-14/07-15) is **stale** — a later session in that repo (`tasks/todo.md`, 2026-07-15 "Local-first MVP") deliberately removed the login gate so the app works fully offline, and set `PLATFORM_ENABLED = false` (`src/config/features.ts`) to park wallet/streams/ads/catalog until thaypley.com's platform side is back online. `LoginScreen.jsx` is confirmed dead/unmounted — `App.jsx` never renders it.

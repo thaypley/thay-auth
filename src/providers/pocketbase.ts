@@ -51,10 +51,10 @@ export async function getAdminPb(): Promise<PocketBase> {
 // Token verification cache (L1 in-process cache)
 // ============================
 
-const tokenCache = new LRUCache<string, { userId: string; expiresAt: number }>({
+const tokenCache = new LRUCache<string, { user: Record<string, unknown>; expiresAt: number }>({
   max: 50000,           // ~50k cached tokens
   ttl: 30 * 24 * 60 * 60 * 1000, // up to 30 days (matches token expiry)
-  dispose: (value, key) => { /* optional cleanup hook */ },
+  dispose: (_value, _key) => { /* optional cleanup hook */ },
 });
 
 /**
@@ -69,7 +69,7 @@ export async function verifyUserToken(token: string): Promise<{ user: Record<str
     if (now < cached.expiresAt) {
       // Reuse an existing PB client (either fresh or stale)
       const pb = adminPb || createClient();
-      return { user: { id: cached.userId }, pb };
+      return { user: cached.user, pb };
     } else {
       // Stale cache entry — remove it
       tokenCache.delete(token);
@@ -92,7 +92,7 @@ export async function verifyUserToken(token: string): Promise<{ user: Record<str
     const expiresAt = Date.now() + Math.max(expiresIn, 60000); // at least 1 minute
 
     // Cache the result for future reuse
-    tokenCache.set(token, { userId: authData.record.id as string, expiresAt });
+    tokenCache.set(token, { user: authData.record as unknown as Record<string, unknown>, expiresAt });
 
     return { user: authData.record as unknown as Record<string, unknown>, pb };
   } catch (err) {

@@ -35,6 +35,10 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
       '@typescript-eslint/no-non-null-assertion': 'off',
+      // `declare global { namespace Express { ... } }` is TS's sanctioned way
+      // to augment Express.Request — declarations only, runtime namespaces
+      // are still rejected.
+      '@typescript-eslint/no-namespace': ['error', { allowDeclarations: true }],
       'no-unused-vars': 'off',
       'no-console': 'off',
       eqeqeq: ['warn', 'smart'],
