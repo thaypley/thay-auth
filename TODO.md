@@ -1,3 +1,31 @@
+## 2026-07-31 — Session Handoff (Phase 1: Secure & Contain — DONE)
+
+### Completed (committed & live on prod `c752978`)
+- **Aud-scoped session JWT wrap** (`src/providers/jwt.ts`): `signUserToken`/`verifyUserToken` mint a thay-auth-signed `{ type:'user', sub, aud, pbToken }` wrapper. `/auth/login|signup|refresh` now return `sessionToken` alongside the raw PB `token`. `requireUser` accepts both — wrapped (checks `aud`, then inner PB token + revocation) and legacy raw PB tokens (unchanged behavior). New `requireUserForApp(allowed[])` middleware enforces `aud`, rejecting cross-app wrapped tokens with 403.
+- **Signup enumeration + invite TOCTOU** (`src/routes/auth.ts`, `src/providers/directSqlUsers.ts`): direct-SQL path pre-checks email/username duplicates (`userExistsDirect`) and returns stable non-enumerable errors; invite redemption is now an atomic SQL compare-and-swap (`redeemInviteDirect` — two concurrent signups can't both pass, loser's user row is deleted). Signup catch no longer leaks PB's raw error — returns generic `Signup failed`.
+- **Device scope allowlist** (`src/routes/devices.ts`): `/devices/pair` rejects unknown scopes (`relay:chat`, `relay:du` only), dedupes/normalizes.
+- **Password ≤72-byte cap** (`src/utils/validate.ts`): bcrypt silently truncates at 72 bytes; reject `Buffer.byteLength > 72`.
+- **timingSafeEqual** on verify codes (`/verify-email`): constant-time compare via SHA-256 digest.
+- **Cleanup cron**: `scripts/cleanup-expired.mjs` purges expired/revoked sessions, devices, and used/expired auth_codes via admin API (idempotent, 404-safe for missing collections). Shipped in container image (`c752978`); cron `10 4 * * * docker exec thay-auth node scripts/cleanup-expired.mjs` added to VPS crontab (existing crons preserved).
+- **Tests**: +`jwt.test.ts` (round-trip, type-mismatch, garbage), +5 wrapped-token + aud-enforcement cases in `requireAuth.test.ts`, +72-byte cases in `validate.test.ts`. **53 passed / 6 files**.
+
+### Verified
+- `CI=1 npm test` → 53 passed. `npm run build` clean. `npm run lint` exit 0.
+- E2E against local dev PB (DIRECT_SQL_USERS=1): signup→login→wrapped `/auth/me` 200 + raw token 200; duplicate email/username → stable errors, invite NOT consumed; >72-byte password rejected; unknown device scope → 400; atomic invite CAS (second redeem false).
+- E2E against prod: signup → wrapped `/auth/me` 200, bad scope → 400, container healthy on `93522a4`→`c752978`.
+
+### Blockers / gotchas
+- Same as prior sessions: `CI=1 npm test`, eslint ~26s boot, `.env` real secrets, remote is `github`.
+- VPS crontab had an orphan `2e62e9e05743_thay-auth` container name conflict during one deploy (`docker compose up` name collision) — resolved by removing it; the deploy itself succeeded.
+- **Not done (Phase 1 remainder, deferred intentionally)**: dedicated auth-only PocketBase instance + data migration — this is an infra/provisioning move (spinning a new PB, migrating 6 users + collections off the 200-collection `hcgi/platform` shared instance). Needs a runbook + prod-maintenance window; no code was written for it because it's a deployment operation, not an app change. Next session's call.
+- `enforce_architect_limit.pb.js` still needs verifying it protects `isVerified`/`tier` fields (PREMORTEM.md item) — the hook is identical between repo & VPS, but its field list should be reviewed.
+
+### Next Session (Phase 2: Cosmic redesign)
+- [ ] Port thay-jot's vibe system (`thay-jot/src/styles/{global,vibes,motion,dsl}.css` — 7 themes, COSMIC default `#1a0a2e`, glass `blur(28px) saturate(1.9)`, spring `cubic-bezier(0.34,1.56,0.64,1)`, STALPH).
+- [ ] Or: dedicated auth-only PB instance migration (if user prefers finishing Phase 1 first).
+
+---
+
 ## 2026-07-31 — Session Handoff (Phase 0: Stabilize, part 2 — COMPLETE)
 
 ### Phase 0 finished (all committed & pushed to `github`, live on VPS)
