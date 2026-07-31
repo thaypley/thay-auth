@@ -14,6 +14,7 @@ set -euo pipefail
 REMOTE="${THAY_AUTH_REMOTE:-${VPS_HOST:-thaypley-vps}}"
 APP_DIR="${THAY_AUTH_APP_DIR:-/docker/thay-auth}"
 PB_DATA_DIR="${THAY_AUTH_PB_DATA_DIR:-/home/thaypley/pocketbase/pb_data}"
+PB_HOOKS_DIR="${THAY_AUTH_PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}"
 
 echo "→ Deploying thay-auth to ${REMOTE}:${APP_DIR}"
 
@@ -21,6 +22,9 @@ ssh "${REMOTE}" "set -euo pipefail
   cd ${APP_DIR}
   echo '→ git pull'
   git pull --ff-only origin main
+  echo '→ sync pb_hooks to PocketBase hooks dir'
+  mkdir -p ${PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}
+  rsync -a --delete --exclude '*.bak' pb_hooks/ ${PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}/
   echo '→ chown PB data dir to in-container node uid (1000)'
   chown -R 1000:1000 ${PB_DATA_DIR}
   echo '→ docker compose build'
