@@ -12,6 +12,7 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY scripts/cleanup-expired.mjs ./scripts/cleanup-expired.mjs
 USER node
 EXPOSE 3749
 CMD ["node", "dist/index.js"]
