@@ -66,7 +66,7 @@ export default async function DownloadsPage(container) {
       app.tagline ? h('p', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
       app.description ? h('p', { className: 'catalog-card-description' }, [app.description]) : null,
       h('div', { className: 'catalog-card-footer' }, [
-        h('span', { className: 'app-card-badge', style: { background: 'var(--pink-light)', color: 'var(--pink-dark)' } }, [
+        h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
           app.isFree ? 'free' : (app.price || ''),
         ]),
         downloadBtn,

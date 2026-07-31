@@ -1,3 +1,34 @@
+## 2026-07-31 — Session Handoff (Phase 2: Cosmic redesign — DONE, uncommitted on `main`)
+
+### Completed (uncommitted, working tree clean)
+- **Port of thay-jot's vibe system → homebase SPA** (7 themes, COSMIC default):
+  - `homebase/src/css/tokens.css` rewritten — thay-jot `:root` (deep glass `--blur: blur(28px) saturate(1.9)`, `--glass-shimmer`, `--glass-inner`, `--metal-shine`, `--liquid-dew`), cosmic default (`--vibe-bg #1a0a2e`, `--vibe-hue rgba(40,8,90,.98)`, `--vibe-text #e8d8ff`, `--vibe-accent #f177ae`, `--vibe-dot #b47eff`, `--vibe-primary linear-gradient(135deg,#3a106e,#b47eff)`, `--dsl-orb-*`) + all 7 `body.vibe-{pink,yellow,blue,spectrum,cosmic,sunset,alien}` theme blocks ported verbatim. Added `--spring: cubic-bezier(0.34,1.56,0.64,1)` and per-theme `--vibe-primary-text` (button text flips for light/dark accents).
+  - `homebase/src/css/base.css` — cosmic body (`#1a0a2e` + 5 fixed `--dsl-orb-*` radial auroras), nebula blob drift, STALPH display headings, DM Sans body, lunar glass scrollbar/selection, cosmic focus glow, ported keyframes (`btnBounce` spring press, `metalShimmer`, `liquidBreathe`, `lensGlow`, `vibeDotBounce`, `toastEnter`, `nebulaDrift`).
+  - `homebase/src/css/components.css` — every component re-skinned to deep glass: `.glass-card` (shimmer + dew + `var(--vibe-hue)` layers, `--blur`, `--metal-shine`/`--glass-inner`), navbar metalShimmer+breathe, `.btn` spring bounce on `:active` + shimmer on hover, `.btn-primary` = cosmic gradient, glass inputs with `--vibe-glow` focus, `.form-card` modal-box glass, glass pills/toasts/devices, vibe switcher dots. All 75 static classes used by pages verified present (script check, 0 missing).
+  - `homebase/src/utils/vibes.js` (new) — `applyVibe`/`loadVibe`/`getVibeColor`/`initVibe`, localStorage key `thay-vibe`, ported from `thay-jot/src/stores/vibes.ts` (body `vibe-*` class + inline `--vibe-primary`/`--vibe-bg`/`--vibe-hl-current`; `--vibe-text`/`--vibe-sub` left to CSS).
+  - `homebase/src/main.js` — `initVibe()` at boot. `homebase/src/components/NavBar.js` — 7-dot vibe switcher (hidden <480px), avatar letter now `--vibe-primary-text`.
+  - `homebase/index.html` — theme-color `#1a0a2e`, cosmic inline critical CSS (loading logo `#b47eff` + purple glow), `<body class="vibe-cosmic">`.
+- **Intentional deviations from thay-jot** (auth-SPA sensibilities): kept DM Sans body / Space Mono labels / STALPH display hierarchy instead of STALPH-everywhere (readability); did NOT port the DSL idle-meltdown state machine (`dsl-active`→`spirit` auto-dissolve — hostile on a login form) — kept only its ambient orb/aurora background layer. `--pink-text`/`--black` re-aliased to cosmic values; Downloads badge switched to glass pill.
+
+### Verified
+- `homebase npm run build` → clean (CSS 24.87 kB gz 5.39 kB; vibes chunk emitted).
+- Root `CI=1 npm test` → **53 passed / 6 files** (no API code touched).
+- `vite preview` smoke: serves index + `vibe-cosmic` body + STALPH.ttf + hashed CSS; spring curve, `btnBounce`, `metalShimmer`, cosmic tokens confirmed present in bundle (minifier collapses to `.34`).
+- Static-class cross-check: 75 JS-used classes → 0 missing from CSS.
+
+### Blockers / gotchas
+- Same as prior sessions: `CI=1 npm test`, eslint ~26s boot, `.env` real secrets, remote is `github`.
+- **Uncommitted** — Phase 2 is the homebase SPA only (no API/prod impact). Deploy path is CF Pages `npm run deploy` (project `thay-homebase`) — not run, awaiting review.
+- `.navbar-brand` gradient-text approach was dropped for a solid `--vibe-accent` + glow (gradient-clip fights backdrop-filter/backdrop on fixed glass navbar).
+
+### Next Session (Phase 3 candidates)
+- [ ] Commit Phase 2 (suggested: `feat: port thay-jot cosmic vibe system — 7 themes, deep glass, spring motion`), then `wrangler pages deploy` to prod.
+- [ ] Dedicated auth-only PocketBase instance + data migration (deferred Phase 1 remainder) if user prefers infra over UI.
+- [ ] Revisit `--black`/`--pink-text` semantic naming (they're now vibe-aware aliases; Phase 3 could rename to `--text`/`--text-accent`).
+- [ ] Confirm `enforce_architect_limit.pb.js` protects `isVerified`/`tier` (PREMORTEM.md item).
+
+---
+
 ## 2026-07-31 — Session Handoff (Phase 1: Secure & Contain — DONE)
 
 ### Completed (committed & live on prod `c752978`)

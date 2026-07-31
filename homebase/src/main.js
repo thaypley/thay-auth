@@ -7,6 +7,9 @@ import './css/base.css';
 import './css/components.css';
 import { route, initRouter } from './router.js';
 import { hasToken } from './sdk.js';
+import { initVibe } from './utils/vibes.js';
+
+initVibe();
 
 // Lazy load pages — each returns an async page fn that loads the chunk,
 // then renders into the container (previously the loaded fn was never called).

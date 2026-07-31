@@ -1,4 +1,4 @@
-/* ─── Reset & Base Styles ─────────────────────────────────────── */
+/* ─── Reset & Base Styles — COSMIC (Phase 2) ─────────────────── */
 
 *,
 *::before,
@@ -17,38 +17,49 @@ html {
 
 body {
   font-family: var(--font-body);
-  color: var(--black);
-  background: linear-gradient(135deg, #fef4f8 0%, #fdf0f5 30%, #fefefe 60%, #f8f4ff 100%);
+  color: var(--vibe-text);
+  background: var(--vibe-bg, #1a0a2e);
+  background-image:
+    radial-gradient(1200px 800px at 80% -10%, var(--dsl-orb-1) 0%, transparent 60%),
+    radial-gradient(1000px 700px at -10% 110%, var(--dsl-orb-2) 0%, transparent 55%),
+    radial-gradient(900px 600px at 110% 90%, var(--dsl-orb-3) 0%, transparent 60%),
+    radial-gradient(700px 700px at 20% 20%, var(--dsl-orb-4) 0%, transparent 60%),
+    radial-gradient(1400px 900px at 50% 50%, var(--dsl-orb-5) 0%, transparent 65%);
+  background-attachment: fixed;
   min-height: 100vh;
   line-height: 1.6;
   overflow-x: hidden;
+  transition: background var(--duration-slow) var(--ease-out), color var(--duration-slow) var(--ease-out);
 }
 
-/* Decorative background blobs */
-body::before {
-  content: '';
-  position: fixed;
-  top: -30%;
-  right: -15%;
-  width: 60vw;
-  height: 60vw;
-  background: radial-gradient(circle, rgba(241, 119, 174, 0.08) 0%, transparent 70%);
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-}
-
+/* Decorative nebula blobs — slow aurora drift */
+body::before,
 body::after {
   content: '';
   position: fixed;
-  bottom: -20%;
-  left: -10%;
-  width: 50vw;
-  height: 50vw;
-  background: radial-gradient(circle, rgba(250, 212, 72, 0.06) 0%, transparent 70%);
   border-radius: 50%;
   pointer-events: none;
   z-index: 0;
+  filter: blur(90px);
+  mix-blend-mode: screen;
+}
+
+body::before {
+  top: -20%;
+  right: -10%;
+  width: 55vw;
+  height: 55vw;
+  background: var(--dsl-orb-1);
+  animation: nebulaDrift 26s ease-in-out infinite alternate;
+}
+
+body::after {
+  bottom: -25%;
+  left: -12%;
+  width: 50vw;
+  height: 50vw;
+  background: var(--dsl-orb-2);
+  animation: nebulaDrift 32s ease-in-out infinite alternate-reverse;
 }
 
 #app {
@@ -56,44 +67,47 @@ body::after {
   z-index: 1;
 }
 
-/* Typography */
+/* Typography — STALPH display, DM Sans body */
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-mono);
+  font-family: var(--font-display);
   font-weight: 700;
   line-height: 1.2;
-  letter-spacing: -0.02em;
+  letter-spacing: 0.01em;
+  color: var(--vibe-text);
 }
 
-h1 { font-size: var(--font-size-4xl); letter-spacing: -0.03em; }
+h1 { font-size: var(--font-size-4xl); }
 h2 { font-size: var(--font-size-3xl); }
 h3 { font-size: var(--font-size-2xl); }
 h4 { font-size: var(--font-size-xl); }
 
 p {
   margin-bottom: var(--space-md);
-  color: rgba(35, 31, 32, 0.8);
+  color: var(--vibe-sub);
 }
 
 a {
-  color: var(--pink-text);
+  color: var(--vibe-accent);
   text-decoration: none;
-  transition: color var(--duration-fast) var(--ease-out);
+  transition: color var(--duration-fast) var(--spring);
 }
 
 a:hover {
-  color: var(--pink-med);
+  color: var(--vibe-dot);
 }
 
-/* Focus */
+/* Focus — cosmic glow ring */
 :focus-visible {
-  outline: 2px solid var(--pink-dark);
+  outline: 2px solid var(--vibe-dot);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+  box-shadow: 0 0 12px var(--vibe-glow);
 }
 
-/* Scrollbar */
+/* Scrollbar — lunar glass */
 ::-webkit-scrollbar {
   width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -101,18 +115,18 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(241, 119, 174, 0.3);
+  background: rgba(180, 126, 255, 0.3);
   border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(241, 119, 174, 0.5);
+  background: rgba(180, 126, 255, 0.5);
 }
 
 /* Selection */
 ::selection {
-  background: rgba(241, 119, 174, 0.2);
-  color: var(--black);
+  background: rgba(180, 126, 255, 0.3);
+  color: var(--vibe-text);
 }
 
 /* Utility classes */
@@ -155,4 +169,61 @@ a:hover {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* ── COSMIC MOTION — ported from thay-jot motion.css ── */
+
+/* Signature button press — spring overshoot */
+@keyframes btnBounce {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.06); }
+  50%  { transform: scale(0.96); }
+  70%  { transform: scale(1.02); }
+  100% { transform: scale(1); }
+}
+
+/* Metallic shimmer sweep across glass surfaces */
+@keyframes metalShimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Liquid breathe — subtle luminance throb */
+@keyframes liquidBreathe {
+  0%, 100% { filter: brightness(1) contrast(1); }
+  50% { filter: brightness(1.04) contrast(1.02); }
+}
+
+/* Hover lens glow */
+@keyframes lensGlow {
+  0%   { box-shadow: 0 0 0 rgba(255, 255, 255, 0), inset 0 0 0 rgba(255, 255, 255, 0); }
+  50%  { box-shadow: 0 0 20px var(--vibe-glow), inset 0 0 20px rgba(255, 255, 255, 0.02); }
+  100% { box-shadow: 0 0 12px var(--vibe-glow), inset 0 0 8px rgba(255, 255, 255, 0.01); }
+}
+
+/* Vibe dot bounce */
+@keyframes vibeDotBounce {
+  0% { scale: 0.8; }
+  50% { scale: 1.18; }
+  100% { scale: 1.08; }
+}
+
+/* Toast spring entry */
+@keyframes toastEnter {
+  0%   { opacity: 0; transform: translateY(20px) scale(0.95); }
+  60%  { opacity: 1; transform: translateY(-4px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Nebula blob drift */
+@keyframes nebulaDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(3vw, -2vh) scale(1.08); }
+  100% { transform: translate(-2vw, 2vh) scale(0.95); }
+}
+
+/* Scrollbar / border pulse for status */
+@keyframes statusDotPulse {
+  0%, 100% { box-shadow: 0 0 4px var(--vibe-glow); }
+  50% { box-shadow: 0 0 12px var(--vibe-glow); }
 }

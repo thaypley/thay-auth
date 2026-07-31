@@ -5,11 +5,13 @@ import { h } from '../utils/dom.js';
 import auth, { hasToken } from '../sdk.js';
 import { navigate } from '../router.js';
 import { setState, getState } from '../store.js';
+import { VIBES, applyVibe, getVibeColor, loadVibe } from '../utils/vibes.js';
 
 export function NavBar() {
   const isLoggedIn = hasToken();
   const state = getState();
   const user = state.user || state.profile;
+  const current = loadVibe();
 
   const brand = h('button', { type: 'button', className: 'navbar-brand', onClick: () => navigate('/') }, ['thay']);
 
@@ -18,8 +20,23 @@ export function NavBar() {
     onClick: () => navigate('/downloads'),
   }, ['downloads']);
 
+  const vibeDots = VIBES.map((v) => h('button', {
+    type: 'button',
+    className: `vibe-dot${v === current ? ' active' : ''}`,
+    style: { background: getVibeColor(v) },
+    title: v,
+    'aria-label': `theme: ${v}`,
+    onClick: (e) => {
+      applyVibe(v);
+      e.currentTarget.parentElement.querySelectorAll('.vibe-dot').forEach((dot) => dot.classList.remove('active'));
+      e.currentTarget.classList.add('active');
+    },
+  }));
+  const vibeSwitcher = h('div', { className: 'vibe-switcher' }, vibeDots);
+
   const end = h('div', { className: 'navbar-end' });
   end.appendChild(downloadsLink);
+  end.appendChild(vibeSwitcher);
 
   if (isLoggedIn && user) {
     const avatar = user.avatar
@@ -31,7 +48,7 @@ export function NavBar() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            color: 'var(--black)',
+            color: 'var(--vibe-primary-text)',
             fontSize: '14px',
             fontWeight: '700',
             fontFamily: 'var(--font-mono)',

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f177ae" />
+  <meta name="theme-color" content="#1a0a2e" />
   <meta name="description" content="thay — your home base for all thay-applications" />
   <title>thay — home base</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -17,20 +17,22 @@
     /* ─── Critical inline CSS so page isn't blank while fonts/JS load ─── */
     @font-face{font-family:'STALPH';src:url('/assets/fonts/STALPH.ttf') format('truetype');font-display:swap}
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:system-ui,-apple-system,sans-serif;color:#231F20;background:linear-gradient(135deg,#fef4f8 0%,#fdf0f5 30%,#fefefe 60%,#f8f4ff 100%);min-height:100vh;line-height:1.6}
+    body{font-family:'DM Sans',system-ui,-apple-system,sans-serif;color:#e8d8ff;background:#1a0a2e;min-height:100vh;line-height:1.6}
+    body::before{content:'';position:fixed;top:-20%;right:-10%;width:55vw;height:55vw;background:radial-gradient(circle,rgba(180,126,255,.28) 0%,transparent 70%);border-radius:50%;pointer-events:none;z-index:0;filter:blur(90px)}
+    body::after{content:'';position:fixed;bottom:-25%;left:-12%;width:50vw;height:50vw;background:radial-gradient(circle,rgba(58,16,110,.22) 0%,transparent 70%);border-radius:50%;pointer-events:none;z-index:0;filter:blur(90px)}
     #app{position:relative;z-index:1}
     .loading-page{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;text-align:center}
-    .loading-logo{font-family:'STALPH','Space Mono',monospace;font-size:2.5rem;color:#f177ae;letter-spacing:.05em}
-    .loading-spinner{width:24px;height:24px;border:2.5px solid rgba(241,119,174,.15);border-top-color:#f177ae;border-radius:50%;animation:spin .6s linear infinite}
+    .loading-logo{font-family:'STALPH','Space Mono',monospace;font-size:2.5rem;color:#b47eff;letter-spacing:.05em;text-shadow:0 0 24px rgba(180,126,255,.55)}
+    .loading-spinner{width:24px;height:24px;border:2.5px solid rgba(160,120,240,.45);border-top-color:#b47eff;border-radius:50%;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>
-<body>
+<body class="vibe-cosmic">
   <div id="app">
     <div class="loading-page">
       <div class="loading-logo">thay</div>
       <div class="loading-spinner"></div>
-      <p style="color:rgba(35,31,32,.5);font-size:.875rem">loading home base…</p>
+      <p style="color:rgba(200,170,255,.72);font-size:.875rem">loading home base…</p>
     </div>
   </div>
   <script>

@@ -1,4 +1,7 @@
-/* ─── thaypley Design Tokens ──────────────────────────────────── */
+/* ─── thaypley Design Tokens — COSMIC (Phase 2) ────────────────
+   Ported from thay-jot/src/styles/{global,vibes}.css
+   7 vibes, COSMIC default. body.vibe-{pink,yellow,blue,spectrum,
+   cosmic,sunset,alien} re-grades the palette. */
 
 @font-face {
   font-family: 'STALPH';
@@ -9,26 +12,29 @@
 }
 
 :root {
-  /* Brand Colors */
+  /* ── CORE (cosmic-default safe palette) ── */
+  --pink: #f177ae;
+  --med-pink: #f494be;
+  --light-pink: #f0cbd9;
+  --yellow: #fad448;
+  --blue: #6581b8;
+  --light-blue: #9baad1;
+  --blackish: #231f20;
+  --muted: rgba(255, 255, 255, 0.45);
+
+  /* Homebase compat aliases */
   --pink-dark: #f177ae;
   --pink-med: #f494be;
-  --pink-light: #f0cbd9;
-  --yellow: #fad448;
-  --yellow-deep: #f0c120;
-  --blue: #6581b8;
-  --blue-light: #9baad1;
-  --black: #231F20;
+  --pink-light: #b47eff;
+  --pink-text: #c9a8ff;
+  --black: #e8d8ff;
   --white: #ffffff;
   --off-white: #fefefe;
 
-  /* AA-safe pink for body text/links on white — --pink-dark fails WCAG
-     contrast (~2.6:1) at text sizes, this passes ~4.8:1 */
-  --pink-text: #a8577d;
-
   /* Surface */
-  --surface: #fefefe;
-  --surface-hover: #fef4f8;
-  --surface-muted: #f8f8f8;
+  --surface: rgba(20, 10, 40, 0.6);
+  --surface-hover: rgba(60, 20, 120, 0.35);
+  --surface-muted: rgba(16, 6, 38, 0.55);
 
   /* Semantic */
   --success: #2ecc71;
@@ -36,19 +42,57 @@
   --danger: #e63946;
   --info: #6581b8;
 
-  /* Glass */
-  --glass-bg: rgba(255, 255, 255, 0.15);
-  --glass-bg-strong: rgba(255, 255, 255, 0.25);
-  --glass-border: rgba(255, 255, 255, 0.25);
-  --glass-border-strong: rgba(255, 255, 255, 0.4);
-  --glass-shadow: 0 8px 32px rgba(241, 119, 174, 0.1);
-  --glass-shadow-lg: 0 16px 48px rgba(241, 119, 174, 0.12);
-  --glass-blur: blur(16px);
+  /* ── DEEP GLASS SYSTEM ── */
+  --glass: rgba(255, 255, 255, 0.12);
+  --glass-mid: rgba(255, 255, 255, 0.22);
+  --glass-hi: rgba(255, 255, 255, 0.55);
+  --blur: blur(28px) saturate(1.9);
+  --glass-edge: linear-gradient(135deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.06) 50%, rgba(255, 255, 255, 0.16) 100%);
+  --glass-shimmer: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.08) 48%, rgba(255, 255, 255, 0.18) 50%, rgba(255, 255, 255, 0.08) 52%, transparent 70%);
+  --glass-inner: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.06);
 
-  /* Gradient */
-  --gradient-pink: linear-gradient(135deg, #f177ae, #f494be);
-  --gradient-pink-yellow: linear-gradient(135deg, #f177ae, #fad448);
-  --gradient-blue: linear-gradient(135deg, #6581b8, #9baad1);
+  /* ── METALLIC REFLECTION SYSTEM ── */
+  --metal-edge: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0.08) 40%, rgba(255, 255, 255, 0.02) 60%, rgba(255, 255, 255, 0.22) 100%);
+  --metal-shine: 0 0 20px rgba(255, 255, 255, 0.04), 0 1px 0 rgba(255, 255, 255, 0.10);
+  --metal-bevel: inset 0 1px 0 rgba(255, 255, 255, 0.15), inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+
+  /* ── LIQUID DEPTH ── */
+  --liquid-ripple: repeating-conic-gradient(rgba(255, 255, 255, 0.02) 0%, transparent 8%, rgba(255, 255, 255, 0.015) 16%, transparent 24%);
+  --liquid-dew: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.10) 0%, transparent 60%);
+
+  /* ── COSMIC VIBE (default) ── */
+  --vibe-bg: #1a0a2e;
+  --vibe-hue: rgba(40, 8, 90, 0.98);
+  --vibe-mid: rgba(28, 6, 72, 0.96);
+  --vibe-soft: rgba(60, 20, 120, 0.90);
+  --vibe-text: #e8d8ff;
+  --vibe-sub: rgba(200, 170, 255, 0.72);
+  --vibe-ph: rgba(160, 120, 240, 0.45);
+  --vibe-accent: #f177ae;
+  --vibe-dot: #b47eff;
+  --vibe-primary: linear-gradient(135deg, #3a106e, #b47eff);
+  --vibe-primary-text: #f0e6ff;
+  --vibe-hl-current: #2a1652;
+  --vibe-glow: rgba(180, 126, 255, 0.55);
+  --dsl-orb-1: rgba(180, 126, 255, 0.28);
+  --dsl-orb-2: rgba(58, 16, 110, 0.22);
+  --dsl-orb-3: rgba(241, 119, 174, 0.12);
+  --dsl-orb-4: rgba(130, 80, 220, 0.14);
+  --dsl-orb-5: rgba(180, 126, 255, 0.08);
+
+  /* Glass card compat */
+  --glass-bg: rgba(28, 6, 72, 0.55);
+  --glass-bg-strong: rgba(60, 20, 120, 0.6);
+  --glass-border: rgba(180, 126, 255, 0.25);
+  --glass-border-strong: rgba(180, 126, 255, 0.5);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.45);
+  --glass-blur: blur(28px) saturate(1.9);
+
+  /* Gradients */
+  --gradient-pink: var(--vibe-primary);
+  --gradient-pink-yellow: linear-gradient(135deg, #3a106e, #b47eff);
+  --gradient-blue: linear-gradient(135deg, #2a1652, #6581b8);
 
   /* Typography */
   --font-display: 'STALPH', 'Space Mono', monospace;
@@ -80,11 +124,12 @@
   --radius-full: 9999px;
 
   /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(35, 31, 32, 0.06);
-  --shadow-md: 0 4px 16px rgba(35, 31, 32, 0.08);
-  --shadow-lg: 0 8px 32px rgba(35, 31, 32, 0.1);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.45);
 
-  /* Transitions */
+  /* Transitions — spring overshoot is the signature */
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
   --duration-fast: 150ms;
@@ -95,4 +140,115 @@
   /* Layout */
   --max-width: 1200px;
   --navbar-height: 64px;
+}
+
+/* ── VIBES — cinematic color grading ── */
+
+body.vibe-pink {
+  --vibe-hue: rgba(210, 90, 140, 0.48);
+  --vibe-mid: rgba(190, 80, 130, 0.30);
+  --vibe-soft: rgba(180, 160, 175, 0.20);
+  --vibe-text: #ffffff;
+  --vibe-sub: rgba(255, 235, 240, 0.72);
+  --vibe-ph: rgba(241, 119, 174, 0.50);
+  --vibe-accent: #ffd166;
+  --vibe-bg: #ffffff;
+  --vibe-primary: #f177ae;
+  --vibe-primary-text: #231f20;
+  --vibe-dot: #f177ae;
+  --vibe-glow: rgba(241, 119, 174, 0.4);
+}
+
+body.vibe-yellow {
+  --vibe-hue: rgba(160, 130, 20, 0.52);
+  --vibe-mid: rgba(180, 145, 18, 0.34);
+  --vibe-soft: rgba(250, 212, 72, 0.16);
+  --vibe-text: #1a1814;
+  --vibe-sub: rgba(35, 31, 28, 0.55);
+  --vibe-ph: rgba(140, 110, 15, 0.45);
+  --vibe-accent: #f177ae;
+  --vibe-bg: #ffffff;
+  --vibe-primary: #fad448;
+  --vibe-primary-text: #1a1814;
+  --vibe-dot: #fad448;
+  --vibe-glow: rgba(250, 212, 72, 0.4);
+}
+
+body.vibe-blue {
+  --vibe-hue: rgba(101, 129, 184, 0.44);
+  --vibe-mid: rgba(101, 129, 184, 0.28);
+  --vibe-soft: rgba(155, 170, 209, 0.22);
+  --vibe-text: #ffffff;
+  --vibe-sub: rgba(255, 255, 255, 0.70);
+  --vibe-ph: rgba(155, 170, 209, 0.55);
+  --vibe-accent: #fad448;
+  --vibe-bg: #ffffff;
+  --vibe-primary: #6581b8;
+  --vibe-primary-text: #ffffff;
+  --vibe-dot: #6581b8;
+  --vibe-glow: rgba(101, 129, 184, 0.4);
+}
+
+body.vibe-spectrum {
+  --vibe-hue: rgba(210, 100, 160, 0.32);
+  --vibe-mid: rgba(140, 160, 210, 0.26);
+  --vibe-soft: rgba(250, 212, 72, 0.10);
+  --vibe-text: #1a1818;
+  --vibe-sub: rgba(30, 28, 28, 0.52);
+  --vibe-ph: rgba(101, 129, 184, 0.40);
+  --vibe-accent: #f177ae;
+  --vibe-bg: #ffffff;
+  --vibe-primary: linear-gradient(135deg, #f177ae, #9baad1, #fad448);
+  --vibe-primary-text: #ffffff;
+  --vibe-dot: #f177ae;
+  --vibe-glow: rgba(241, 119, 174, 0.35);
+}
+
+body.vibe-sunset {
+  --vibe-hue: rgba(170, 60, 80, 0.48);
+  --vibe-mid: rgba(190, 80, 70, 0.30);
+  --vibe-soft: rgba(220, 120, 100, 0.18);
+  --vibe-text: #fff5f0;
+  --vibe-sub: rgba(255, 210, 190, 0.70);
+  --vibe-ph: rgba(210, 100, 80, 0.50);
+  --vibe-accent: #ffc857;
+  --vibe-bg: #fff5f0;
+  --vibe-primary: linear-gradient(135deg, #e07060, #f177ae);
+  --vibe-primary-text: #ffffff;
+  --vibe-dot: #f177ae;
+  --vibe-glow: rgba(225, 112, 96, 0.4);
+}
+
+body.vibe-alien {
+  --vibe-hue: rgba(0, 22, 0, 0.97);
+  --vibe-mid: rgba(0, 16, 0, 0.96);
+  --vibe-soft: rgba(0, 10, 0, 0.92);
+  --vibe-text: #00ff41;
+  --vibe-sub: rgba(0, 255, 65, 0.60);
+  --vibe-ph: rgba(0, 200, 50, 0.38);
+  --vibe-accent: #00ff41;
+  --vibe-bg: #0a0a0a;
+  --vibe-primary: #00cc00;
+  --vibe-primary-text: #0a0a0a;
+  --vibe-dot: #00ff41;
+  --vibe-glow: rgba(0, 255, 65, 0.35);
+}
+
+body.vibe-cosmic {
+  --vibe-hue: rgba(40, 8, 90, 0.98);
+  --vibe-mid: rgba(28, 6, 72, 0.96);
+  --vibe-soft: rgba(60, 20, 120, 0.90);
+  --vibe-text: #e8d8ff;
+  --vibe-sub: rgba(200, 170, 255, 0.72);
+  --vibe-ph: rgba(160, 120, 240, 0.45);
+  --vibe-accent: #f177ae;
+  --vibe-dot: #b47eff;
+  --vibe-bg: #1a0a2e;
+  --vibe-primary: linear-gradient(135deg, #3a106e, #b47eff);
+  --vibe-glow: rgba(180, 126, 255, 0.55);
+  --dsl-orb-1: rgba(180, 126, 255, 0.28);
+  --dsl-orb-2: rgba(58, 16, 110, 0.22);
+  --dsl-orb-3: rgba(241, 119, 174, 0.12);
+  --dsl-orb-4: rgba(130, 80, 220, 0.14);
+  --dsl-orb-5: rgba(180, 126, 255, 0.08);
 }
