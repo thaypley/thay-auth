@@ -1,3 +1,32 @@
+## 2026-07-31 — Session Handoff (Phase 0: Stabilize, part 2 — COMPLETE)
+
+### Phase 0 finished (all committed & pushed to `github`, live on VPS)
+- `npm run lint` → **exit 0 confirmed** (was mid-run last session).
+- **Committed Phase 0** (`9910361`): session-revocation inversion + cache-hit shape + vitest/build restore.
+- **Prod was live-breaking on `a646e72`** (broken session-revocation = every legit user 401). Verified: prod container was running `a646e72`. **Deployed the fix** — Dockerfile was also missing `tsconfig.build.json` in the build stage (fixed `f65379c`), then `deploy.sh` → healthy.
+- **Proved the fix live end-to-end**: created a real user via invite `TP-MK2E` → `GET /auth/me` with valid token → **200 + full user record** (was 401 on a646e72). Logout flips `sessions.revoked=1` in prod DB; subsequent revoked-token 401 is served after the 60s revocation cache TTL. Test user deleted (prod back to 6 users).
+- **tokenHash indexes** (`012_index_session_device_tokens.js`): applied locally via `./pocketbase migrate up`; applied to prod shared PB directly (`CREATE INDEX IF NOT EXISTS idx_sessions_token / idx_devices_token`). Used **non-unique** — prod `sessions` has 45 duplicate tokenHash rows (same token recorded twice; data-quality smell, revisit in Phase 3 sessions/devices UI work). Backup taken at `/tmp/data.db.bak.*` on VPS.
+- **pb_hooks sync wired into `scripts/deploy.sh`** (`8ef6227`): `rsync --delete pb_hooks/` → `/home/thaypley/pocketbase/pb_hooks` (rsync confirmed present on VPS). `enforce_architect_limit.pb.js` already identical to VPS.
+
+### Verified
+- `CI=1 npm test` → **39 passed / 5 files** (note: earlier "68/9" in part-1 handoff was stale — only 5 test files exist).
+- `npm run build` → clean.
+- API host is **`api.thaypley.com`** (`auth.thaypley.com` is the CF Pages SPA; `/auth/health` there returns the SPA HTML — the health route is shadowed, only reachable via the API host).
+
+### Blockers / gotchas
+- Same as part 1: `CI=1 npm test`, eslint ~26s boot, `.env` real secrets, `remote` is `github` not `origin`.
+- Prod PB hooks live in `/home/thaypley/pocketbase/pb_hooks` — repo copy is now the source of truth and deploy-synced.
+
+### Next Session (Phase 1: Secure & Contain)
+- [ ] Dedicated auth-only PocketBase instance + data migration (Phase 1).
+- [ ] aud-scoped thay-auth JWT wrapping PB token (option a).
+- [ ] Signup error/email-enumeration fixes.
+- [ ] Device scope allowlist.
+- [ ] Password ≤72-byte cap + timingSafeEqual on verify codes.
+- [ ] Cleanup cron.
+
+---
+
 ## 2026-07-31 — Session Handoff (Phase 0: Stabilize, part 1)
 
 ### Context
