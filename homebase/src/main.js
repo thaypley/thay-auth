@@ -5,11 +5,14 @@
 import './css/tokens.css';
 import './css/base.css';
 import './css/components.css';
+import './css/sky-theme.css';
 import { route, initRouter } from './router.js';
 import { hasToken } from './sdk.js';
 import { initVibe } from './utils/vibes.js';
+import { initSky } from './utils/sky.js';
 
 initVibe();
+initSky();
 
 // Lazy load pages — each returns an async page fn that loads the chunk,
 // then renders into the container (previously the loaded fn was never called).

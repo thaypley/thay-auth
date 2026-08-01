@@ -18,48 +18,14 @@ html {
 body {
   font-family: var(--font-body);
   color: var(--vibe-text);
-  background: var(--vibe-bg, #1a0a2e);
-  background-image:
-    radial-gradient(1200px 800px at 80% -10%, var(--dsl-orb-1) 0%, transparent 60%),
-    radial-gradient(1000px 700px at -10% 110%, var(--dsl-orb-2) 0%, transparent 55%),
-    radial-gradient(900px 600px at 110% 90%, var(--dsl-orb-3) 0%, transparent 60%),
-    radial-gradient(700px 700px at 20% 20%, var(--dsl-orb-4) 0%, transparent 60%),
-    radial-gradient(1400px 900px at 50% 50%, var(--dsl-orb-5) 0%, transparent 65%);
-  background-attachment: fixed;
+  /* The sky (src/utils/sky.js, z-index:-2) owns the background now. Body stays
+     transparent so the clock-driven sky shows through; the inline critical CSS
+     in index.html provides the FOUC-safe day-sky fallback before JS mounts. */
+  background: transparent;
   min-height: 100vh;
   line-height: 1.6;
   overflow-x: hidden;
   transition: background var(--duration-slow) var(--ease-out), color var(--duration-slow) var(--ease-out);
-}
-
-/* Decorative nebula blobs — slow aurora drift */
-body::before,
-body::after {
-  content: '';
-  position: fixed;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 0;
-  filter: blur(90px);
-  mix-blend-mode: screen;
-}
-
-body::before {
-  top: -20%;
-  right: -10%;
-  width: 55vw;
-  height: 55vw;
-  background: var(--dsl-orb-1);
-  animation: nebulaDrift 26s ease-in-out infinite alternate;
-}
-
-body::after {
-  bottom: -25%;
-  left: -12%;
-  width: 50vw;
-  height: 50vw;
-  background: var(--dsl-orb-2);
-  animation: nebulaDrift 32s ease-in-out infinite alternate-reverse;
 }
 
 #app {
@@ -213,13 +179,6 @@ a:hover {
   0%   { opacity: 0; transform: translateY(20px) scale(0.95); }
   60%  { opacity: 1; transform: translateY(-4px) scale(1.02); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Nebula blob drift */
-@keyframes nebulaDrift {
-  0%   { transform: translate(0, 0) scale(1); }
-  50%  { transform: translate(3vw, -2vh) scale(1.08); }
-  100% { transform: translate(-2vw, 2vh) scale(0.95); }
 }
 
 /* Scrollbar / border pulse for status */

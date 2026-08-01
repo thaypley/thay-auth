@@ -4,8 +4,8 @@
 
 .glass-card,
 .glass-card-static {
-  background-image: var(--glass-shimmer), var(--liquid-dew), var(--vibe-hue);
-  background-size: 400% 100%, 100% 100%, 100% 100%;
+  background-image: var(--glass-shimmer), var(--liquid-dew);
+  background-size: 400% 100%, 100% 100%;
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--glass-hi);
@@ -30,8 +30,8 @@
   left: 0;
   right: 0;
   height: var(--navbar-height);
-  background-image: var(--glass-shimmer), var(--liquid-dew), var(--vibe-mid);
-  background-size: 400% 100%, 100% 100%, 100% 100%;
+  background-image: var(--glass-shimmer), var(--liquid-dew);
+  background-size: 400% 100%, 100% 100%;
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border-bottom: 1px solid var(--glass-hi);
@@ -337,8 +337,8 @@
 /* ─── Form Layout ─────────────────────────────────────────────── */
 
 .form-card {
-  background-image: var(--glass-shimmer), var(--liquid-dew), var(--vibe-hue);
-  background-size: 400% 100%, 100% 100%, 100% 100%;
+  background-image: var(--glass-shimmer), var(--liquid-dew);
+  background-size: 400% 100%, 100% 100%;
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--glass-hi);

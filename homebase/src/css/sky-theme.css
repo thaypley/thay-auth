@@ -1,0 +1,199 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   SKY-THEME — time-of-day readable layer (ported from thaypley/css/sky-theme.css)
+   ───────────────────────────────────────────────────────────────────────
+   The animated sky moves through 5 phases across the day. This layer keeps
+   every word and surface legible against it, automatically.
+
+   Single source of truth: buildPlatformSky() in src/utils/sky.js writes
+     body[data-sky-phase] = sunrise | day | sunset | twilight | night   (tint)
+     body[data-sky-lum]   = light | dark                                (contrast bucket)
+   and mirrors lum="dark" onto the legacy .sky-night class.
+
+   Two contrast buckets:
+     light sky  → dark text on warm-white frosted glass
+     dark  sky  → light text on dark frosted glass
+   Brand pinks/yellows ride ON TOP of the frost and stay vivid; the sky
+   still glows softly behind every surface.
+
+   The vibes (7-dot switcher) are subsumed to hue/accent only — this layer
+   owns text/surface contrast so a vibe can never fight the sky.
+
+   Auto only — no manual toggle. The clock decides.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── Contrast buckets ──────────────────────────────────────────────────
+   :root holds the LIGHT-sky defaults — these are also the FOUC-safe first
+   paint (dark text on light), matching the html fallback day-blue gradient
+   before this stylesheet or the sky engine mount. */
+:root {
+  --surface-frost:   rgba(255, 252, 248, 0.82);
+  --surface-frost-2: rgba(255, 252, 248, 0.92); /* denser, for dialogs/inputs */
+  --frost-border:    rgba(35, 31, 32, 0.08);
+  --frost-blur:      12px;
+  --scrim:           rgba(35, 31, 32, 0.45);
+  --text-primary:    #231F20;
+  --text-secondary:  rgba(35, 31, 32, 0.62);
+  --text-tertiary:   rgba(35, 31, 32, 0.45);
+}
+
+/* Light sky — dark text. Explicit body[data-sky-lum] wins over body.vibe-*
+   (equal specificity, later in source order) so a vibe can't weld text shut. */
+body[data-sky-lum="light"] {
+  --surface-frost:   rgba(255, 252, 248, 0.82);
+  --surface-frost-2: rgba(255, 252, 248, 0.92);
+  --frost-border:    rgba(35, 31, 32, 0.08);
+  --scrim:           rgba(35, 31, 32, 0.45);
+  --vibe-text:       #231F20;
+  --vibe-sub:        rgba(35, 31, 32, 0.62);
+  --vibe-ph:         rgba(35, 31, 32, 0.45);
+  --text-primary:    #231F20;
+  --text-secondary:  rgba(35, 31, 32, 0.62);
+  --text-tertiary:   rgba(35, 31, 32, 0.45);
+}
+
+/* Dark sky → light text on dark glass */
+body[data-sky-lum="dark"] {
+  --surface-frost:   rgba(28, 22, 46, 0.62);
+  --surface-frost-2: rgba(24, 19, 40, 0.86);
+  --frost-border:    rgba(255, 255, 255, 0.14);
+  --scrim:           rgba(10, 8, 16, 0.58);
+  --vibe-text:       #fdf2f8;
+  --vibe-sub:        rgba(255, 255, 255, 0.72);
+  --vibe-ph:         rgba(255, 255, 255, 0.50);
+  --text-primary:    #fdf2f8;
+  --text-secondary:  rgba(255, 255, 255, 0.72);
+  --text-tertiary:   rgba(255, 255, 255, 0.50);
+}
+
+/* ── Per-phase tints (fine-tune the frost to the sky behind it) ──────────
+   Sunrise/sunset go warm; twilight goes cool dusk. Day & night use bucket
+   defaults above. */
+body[data-sky-phase="sunrise"] {
+  --surface-frost:   rgba(255, 250, 244, 0.84);
+  --frost-border:    rgba(140, 80, 30, 0.10);
+}
+body[data-sky-phase="sunset"] {
+  --surface-frost:   rgba(255, 248, 240, 0.86);
+  --surface-frost-2: rgba(255, 248, 240, 0.94);
+  --frost-border:    rgba(120, 60, 20, 0.12);
+}
+body[data-sky-phase="twilight"] {
+  --surface-frost:   rgba(40, 28, 60, 0.60);
+  --surface-frost-2: rgba(32, 22, 50, 0.88);
+  --frost-border:    rgba(255, 255, 255, 0.12);
+}
+
+/* ── Bare text on the sky adapts to the bucket ──────────────────────────
+   Body copy that sits directly on the sky (no card) flips dark↔light. */
+body {
+  color: var(--vibe-text);
+  transition: color var(--duration-slow, 400ms) var(--ease-out, ease);
+}
+
+/* ── Frosted surfaces — the universal readability backing ────────────────
+   Glass surfaces frost in ALL phases (light glass by day, dark glass at
+   night). Text on them rides the bucket tokens so it always clears. */
+.glass-card,
+.glass-card-static,
+.form-card,
+.navbar,
+.app-card,
+.device-item,
+.profile-tag,
+.pill,
+.vibe-switcher,
+.btn-secondary {
+  background-color: var(--surface-frost) !important;
+  border: 1px solid var(--frost-border) !important;
+  backdrop-filter: blur(var(--frost-blur)) saturate(1.06);
+  -webkit-backdrop-filter: blur(var(--frost-blur)) saturate(1.06);
+  color: var(--text-primary);
+  transition: background-color var(--duration-base, 280ms) var(--ease-out, ease),
+              color var(--duration-base, 280ms) var(--ease-out, ease),
+              border-color var(--duration-base, 280ms) var(--ease-out, ease);
+}
+
+/* Denser frost for inputs & toasts — copy must be rock-solid at any hour. */
+.input,
+.toast {
+  background-color: var(--surface-frost-2) !important;
+  border: 1px solid var(--frost-border) !important;
+  backdrop-filter: blur(var(--frost-blur)) saturate(1.06);
+  -webkit-backdrop-filter: blur(var(--frost-blur)) saturate(1.06);
+  color: var(--text-primary);
+}
+
+/* Vibe switcher sits inside the navbar — keep it see-through like the bar. */
+.vibe-switcher {
+  background-color: var(--surface-frost-2) !important;
+}
+
+/* Interactive borders stay vivid on hover — frost must not kill affordance. */
+.glass-card:hover,
+.app-card--action:hover,
+.pill:hover,
+.device-item:hover {
+  border-color: var(--vibe-dot) !important;
+}
+
+/* ── Secondary / muted copy follows the bucket ───────────────────────────
+   These components use --vibe-sub/--vibe-ph, already overridden per bucket. */
+.subtitle,
+.form-footer,
+.input-hint,
+.device-meta,
+.profile-handle,
+.profile-bio,
+.app-card-version,
+.catalog-card-description,
+.btn-ghost {
+  color: var(--vibe-sub);
+}
+
+/* ── Brand accents stay vivid on frost ───────────────────────────────────
+   These never adapt — they're the brand, legible against frosted glass in
+   both buckets. */
+.auth-logo,
+.navbar-brand,
+.link-btn,
+.profile-tag,
+.catalog-card-tagline,
+.error-page h1 {
+  color: var(--vibe-accent) !important;
+}
+
+/* Text shadows tuned for light buckets — heavy glow washes out on bright
+   sky, so only apply on dark phases. */
+body[data-sky-lum="light"] .auth-logo,
+body[data-sky-lum="light"] .form-card h2,
+body[data-sky-lum="light"] .downloads-header h2 {
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.35);
+}
+body[data-sky-lum="dark"] .auth-logo,
+body[data-sky-lum="dark"] .form-card h2,
+body[data-sky-lum="dark"] .downloads-header h2 {
+  text-shadow: 0 0 24px var(--vibe-glow);
+}
+
+/* ── Accessibility ──────────────────────────────────────────────────────
+   Global reduced-motion kill-switch (mirrors thaypley tokens.css). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  #tp-sky { transition: none; }
+  #tp-stars { transition: none; }
+  .tp-cloud { animation: none !important; opacity: 0 !important; }
+}
+
+/* Reduce blur for users who ask for less effects. */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --frost-blur: 0px; }
+  .glass-card, .glass-card-static, .form-card, .navbar, .app-card,
+  .device-item, .profile-tag, .pill, .vibe-switcher, .btn-secondary {
+    background-color: var(--surface-frost-2) !important;
+  }
+}

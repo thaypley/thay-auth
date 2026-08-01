@@ -6,9 +6,13 @@ import auth from '../sdk.js';
 import { navigate } from '../router.js';
 import { getState, setState, onStateChange } from '../store.js';
 import { pageTransition, staggerIn, fadeUp } from '../utils/animations.js';
+import { mountWeather } from '../utils/sky.js';
 import { NavBar } from '../components/NavBar.js';
 
 export default async function DashboardPage(container) {
+  // Ambient weather particles (rain/snow/fog) — dashboard only, where users
+  // linger. Auth pages stay calm.
+  mountWeather();
   // Ensure logged in
   const token = auth.getToken();
   if (!token) {
