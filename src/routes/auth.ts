@@ -55,10 +55,12 @@ function avatarUrl(record: Record<string, unknown>): string {
   return `${config.pbPublicUrl}/api/files/users/${record.id}/${filename}`;
 }
 
-function sanitizeUser(record: Record<string, unknown>) {
+function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
   return {
     id: record.id,
-    email: record.email,
+    // PB hides `email` from admin reads when emailVisibility is off; fall
+    // back to the caller-supplied identity (owner-scope reads include it).
+    email: record.email || emailFallback,
     username: record.username,
     accountType: record.accountType,
     isVerified: record.isVerified || false,
@@ -95,11 +97,15 @@ async function recordSession(
 
 async function revokeSessionByToken(pb: Awaited<ReturnType<typeof getAdminPb>>, token: string): Promise<boolean> {
   try {
-    const match = await pb.collection('sessions').getList(1, 1, {
+    // authRefresh can return a byte-identical token within the same second,
+    // so multiple session rows may share one tokenHash. Revoke them all.
+    const matches = await pb.collection('sessions').getList(1, 100, {
       filter: `tokenHash="${hashToken(token)}"`,
     });
-    if (match.items.length === 0) return false;
-    await pb.collection('sessions').update(match.items[0].id, { revoked: true });
+    if (matches.items.length === 0) return false;
+    await Promise.allSettled(
+      matches.items.map((r) => pb.collection('sessions').update(r.id, { revoked: true })),
+    );
     return true;
   } catch (err) {
     logger.warn('revokeSessionByToken failed', { error: err });
@@ -313,9 +319,19 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
           filter: `username="${escapedIdentity}"`,
         });
         if (match.items.length > 0) {
-          loginIdentity = (match.items[0] as unknown as Record<string, string>).email;
+          const found = match.items[0] as unknown as Record<string, string>;
+          // PocketBase hides `email` from admin reads when the record's
+          // emailVisibility is off, so found.email can be undefined. Keep the
+          // raw username as the fallback — PB's authWithPassword resolves
+          // usernames natively (identityFields: username, email). Without this
+          // the identity becomes undefined and PB rejects with a validation
+          // error, surfacing as a bogus 401 on every username login.
+          loginIdentity = found.email || loginIdentity;
         }
-      } catch { /* fall through */ }
+      } catch { /* fall through to username identity */ }
+    }
+    if (!loginIdentity) {
+      loginIdentity = identity.toLowerCase().trim();
     }
 
     const pb = createClient();
@@ -352,9 +368,8 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
 
 router.post('/logout', requireUser, async (req: Request, res: Response) => {
   try {
-    const token = req.headers.authorization!.slice(7);
     const pb = await getAdminPb();
-    const revoked = await revokeSessionByToken(pb, token);
+    const revoked = await revokeSessionByToken(pb, req.pbToken!);
 
     if (revoked) {
       logger.info(`Session revoked on logout for user ${req.user!.id}`);
@@ -373,7 +388,7 @@ router.get('/me', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const user = await pb.collection('users').getOne(req.user!.id);
-    return res.status(200).json(sanitizeUser(user as unknown as Record<string, unknown>));
+    return res.status(200).json(sanitizeUser(user as unknown as Record<string, unknown>, req.user?.email || ''));
   } catch (err) {
     logger.error('/me error:', err);
     return res.status(500).json({ error: 'Failed to fetch user' });
@@ -383,7 +398,7 @@ router.get('/me', requireUser, async (req: Request, res: Response) => {
 router.post('/refresh', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = createClient();
-    pb.authStore.save(req.headers.authorization!.slice(7), null);
+    pb.authStore.save(req.pbToken!, null);
     const authData = await pb.collection('users').authRefresh();
     const adminPbForSession = await getAdminPb();
     await recordSession(adminPbForSession, authData.record.id as string, authData.token, req.body?.app, req);

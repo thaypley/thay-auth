@@ -20,7 +20,14 @@ export const config = {
 
   jwtSecret,
 
-  corsOrigins: (process.env.CORS_ORIGINS || 'http://localhost:5173,http://localhost:3749').split(','),
+  // Allow the thaypley desktop apps (thay-studio et al.) to authenticate.
+  // Vite/Tauri dev serves on 1420; packaged apps run in a Tauri webview.
+  corsOrigins: (
+    process.env.CORS_ORIGINS ||
+    'http://localhost:5173,http://localhost:3749,' +
+    'http://localhost:1420,http://127.0.0.1:1420,' +
+    'tauri://localhost,http://tauri.localhost'
+  ).split(','),
 
   smtp: {
     host: process.env.SMTP_HOST || '',

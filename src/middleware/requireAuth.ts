@@ -59,6 +59,8 @@ declare global {
     interface Request {
       user?: AuthUser;
       device?: AuthDevice;
+      /** The PocketBase JWT verified inside the (possibly wrapped) Bearer token. */
+      pbToken?: string;
     }
   }
 }
@@ -87,6 +89,7 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
     if (await isSessionRevoked(pb, wrapped.pbToken)) {
       return res.status(401).json({ error: 'Session revoked' });
     }
+    req.pbToken = wrapped.pbToken;
     req.user = {
       id: wrapped.sub,
       email: result.user.email as string,
@@ -109,6 +112,7 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
     return res.status(401).json({ error: 'Session revoked' });
   }
 
+  req.pbToken = token;
   req.user = {
     id: result.user.id as string,
     email: result.user.email as string,

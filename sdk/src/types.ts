@@ -18,6 +18,7 @@ export interface UserProfile extends ThayUser {
 export interface AuthSession {
   user: ThayUser;
   token: string;
+  sessionToken?: string;
   expiry?: number;
 }
 

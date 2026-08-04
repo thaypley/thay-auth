@@ -73,7 +73,7 @@ export class ThayAuth {
       method: 'POST',
       body: JSON.stringify({ identity, password }),
     });
-    this.token = data.token;
+    this.token = data.sessionToken || data.token;
     this.user = data.user;
     this.notify(this.user);
     return data;
@@ -103,7 +103,7 @@ export class ThayAuth {
     const data = await this.request<AuthSession>('/auth/refresh', {
       method: 'POST',
     });
-    this.token = data.token;
+    this.token = data.sessionToken || data.token;
     this.user = data.user;
     return data;
   }

@@ -56,14 +56,32 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
 
     const expiresAt = new Date(Date.now() + config.tokenExpiryMs).toISOString();
 
-    const device = await pb.collection('devices').create({
-      userId: req.user!.id,
-      tokenHash,
-      label: label.trim(),
-      scopes: finalScopes,
-      expiresAt,
-      revoked: false,
+    // Idempotent pairing: if an unrevoked device with this label already
+    // exists for the user, re-sign a fresh token for it instead of creating
+    // a duplicate row on every login.
+    const existing = await pb.collection('devices').getList(1, 1, {
+      filter: `userId="${escapePbFilterValue(req.user!.id)}" && label="${escapePbFilterValue(label.trim())}" && revoked=false`,
     });
+
+    let device: Record<string, unknown>;
+    if (existing.items.length > 0) {
+      device = existing.items[0] as unknown as Record<string, unknown>;
+      await pb.collection('devices').update(device.id as string, {
+        tokenHash,
+        scopes: finalScopes,
+        expiresAt,
+        lastSeenAt: new Date().toISOString(),
+      });
+    } else {
+      device = await pb.collection('devices').create({
+        userId: req.user!.id,
+        tokenHash,
+        label: label.trim(),
+        scopes: finalScopes,
+        expiresAt,
+        revoked: false,
+      });
+    }
 
     const deviceToken = signDeviceToken(
       device.id as string,
