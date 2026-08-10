@@ -27,7 +27,10 @@ export interface UserTokenPayload {
 
 export function signUserToken(sub: string, aud: AppSlug, pbToken: string): string {
   const payload: Omit<UserTokenPayload, 'iat' | 'exp'> = { type: 'user', sub, aud, pbToken };
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: '30d' });
+  // expiresIn as SECONDS derived from config.tokenExpiryMs — the single knob
+  // for session lifetime (was a hardcoded '30d' that silently diverged if
+  // config was tuned).
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: Math.floor(config.tokenExpiryMs / 1000) });
 }
 
 export function verifyUserToken(token: string): UserTokenPayload | null {
@@ -48,7 +51,7 @@ export function signDeviceToken(deviceId: string, userId: string, scopes: string
     userId,
     scopes,
   };
-  return jwt.sign(payload, config.jwtSecret, { expiresIn: '30d' });
+  return jwt.sign(payload, config.jwtSecret, { expiresIn: Math.floor(config.tokenExpiryMs / 1000) });
 }
 
 export function verifyDeviceToken(token: string): DeviceTokenPayload | null {

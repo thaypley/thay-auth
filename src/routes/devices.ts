@@ -192,6 +192,10 @@ router.post('/verify', async (req: Request, res: Response) => {
       userId: payload.userId,
       deviceId: payload.deviceId,
       scopes: payload.scopes,
+      // The device's REAL expiry (set at pair time from config.tokenExpiryMs).
+      // Consumers (the dabba brain's du_paired_devices self-heal) record this
+      // instead of mirroring the TTL constant themselves — one source of truth.
+      expiresAt: (device as unknown as Record<string, unknown>).expiresAt ?? null,
     });
   } catch {
     return res.status(500).json({ valid: false, error: 'Verification failed' });

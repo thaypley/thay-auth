@@ -52,10 +52,18 @@ export const config = {
 
   // Public base of the PocketBase instance, used to build browser-reachable
   // file URLs (avatars). The internal pbUrl is host-local only.
-  pbPublicUrl: (process.env.PB_PUBLIC_URL || 'https://thaypley.com/hcgi/platform').replace(/\/+$/, ''),
+  // thaypley.com nginx mounts PB at the ORIGIN (/api/* → 8090); the old
+  // '/hcgi/platform' value pointed at the platform SPA, so every avatar URL
+  // rendered as broken HTML instead of an image.
+  pbPublicUrl: (process.env.PB_PUBLIC_URL || 'https://thaypley.com').replace(/\/+$/, ''),
 
-  // Token expiry — 30 days. Used for both user sessions and device tokens.
-  tokenExpiryMs: 30 * 24 * 60 * 60 * 1000,
+  // Token expiry — 30 days per segment. THE single source of truth for
+  // session AND device token lifetimes: jwt.ts signs with this, /devices/pair
+  // and /auth/* store expiresAt from it, and /devices/verify returns the
+  // stored expiry so the brain's du_paired_devices self-heal can record the
+  // REAL expiry instead of a mirrored constant. Override per environment with
+  // TOKEN_EXPIRY_MS (e.g. 90 * 24 * 60 * 60 * 1000).
+  tokenExpiryMs: Number(process.env.TOKEN_EXPIRY_MS) || 30 * 24 * 60 * 60 * 1000,
 
   // Verification code expiry — 15 minutes.
   verificationCodeExpiryMs: 15 * 60 * 1000,
