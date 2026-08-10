@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { hashPasswordBcrypt } from '../utils/bcrypt.js';
+import { describe, it, expect, afterAll } from 'vitest';
+import { hashPasswordBcrypt, closeBcryptPool } from '../utils/bcrypt.js';
+
+afterAll(() => closeBcryptPool());
 
 describe('hashPasswordBcrypt', () => {
   it('returns a valid bcrypt hash', async () => {
@@ -20,6 +22,18 @@ describe('hashPasswordBcrypt', () => {
 
   it('throws on empty password', async () => {
     await expect(hashPasswordBcrypt('')).rejects.toThrow('empty password');
+  });
+
+  it('handles concurrent hashes across the worker pool', async () => {
+    const hashes = await Promise.all(
+      Array.from({ length: 8 }, () => hashPasswordBcrypt('concurrent-password')),
+    );
+    for (const h of hashes) {
+      expect(h).toMatch(/^\$2[abyx]\$\d+\$/);
+      expect(h.length).toBe(60);
+    }
+    // All distinct — pool lanes must not reuse or corrupt results.
+    expect(new Set(hashes).size).toBe(8);
   });
 });
 

@@ -379,7 +379,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
       // Pre-check duplicates before spending a bcrypt round (~78ms). The
       // unique indexes are the real enforcement; createUserDirect maps a
       // lost race to a DuplicateFieldError below.
-      const dupes = userExistsDirect(config.pbDataPath, normalizedEmail, sanitizedUsername);
+      const dupes = await userExistsDirect(config.pbDataPath, normalizedEmail, sanitizedUsername);
       if (dupes.email) {
         return res.status(400).json({ error: 'An account with this email already exists' });
       }
@@ -401,7 +401,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
 
       // Atomic compare-and-swap on useCount — two concurrent signups with
       // the same code can't both pass. If we lost the race, undo the user.
-      redeemSucceeded = redeemInviteDirect(config.pbDataPath, inviteId, maxUses, userId);
+      redeemSucceeded = await redeemInviteDirect(config.pbDataPath, inviteId, maxUses, userId);
       if (!redeemSucceeded) {
         try { await pb.collection('users').delete(userId); } catch { /* best effort */ }
         return res.status(400).json({ error: 'Invite code has been fully used' });

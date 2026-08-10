@@ -41,7 +41,14 @@ describe('user session token (aud-scoped wrapper)', () => {
 
   it('rejects a token with a tampered signature', () => {
     const t = signUserToken('u1', 'tunes', 'inner');
-    expect(verifyUserToken(`${t.slice(0, -1)}A`)).toBeNull();
+    // Deterministic tamper: flip the first payload char so the HMAC over
+    // `header.payload` can never match (a naive last-char replace was a
+    // no-op 1/64 of the time).
+    const parts = t.split('.');
+    const payload = parts[1];
+    const flipped = payload[0] === 'A' ? 'B' : 'A';
+    const tampered = `${parts[0]}.${flipped}${payload.slice(1)}.${parts[2]}`;
+    expect(verifyUserToken(tampered)).toBeNull();
   });
 
   it('rejects garbage', () => {

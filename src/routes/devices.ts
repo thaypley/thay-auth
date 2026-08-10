@@ -1,13 +1,13 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getAdminPb } from '../providers/pocketbase.js';
-import { signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
+import { signDeviceToken, verifyDeviceToken, type DeviceTokenPayload } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../utils/metrics.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
-import LRUCache from 'lru-cache';
+import { SharedCache } from '../utils/sharedCache.js';
 
 const router = Router();
 
@@ -16,11 +16,10 @@ const router = Router();
 const KNOWN_SCOPES = new Set(['relay:chat', 'relay:du']);
 
 /**
- * L1 device cache for /devices/verify — the hot path for device
- * heartbeats. A verified device's row is served from cache for up to
- * `deviceCacheTtlMs` (60s), so steady-state heartbeats cost ZERO PB
- * reads. Revocation propagates within the TTL (unpair invalidates the
- * entry immediately on this instance).
+ * L1+L2 cache for /devices/verify — the hot path for device heartbeats.
+ * L1 serves steady-state heartbeats with ZERO PB reads; L2 (Redis, when
+ * configured) propagates unpair/revoke across replicas on their next
+ * local miss. Revocation is otherwise visible within the TTL (60s).
  */
 interface CachedDevice {
   revoked: boolean;
@@ -29,13 +28,15 @@ interface CachedDevice {
   lastSeenAt: number | null;
 }
 
-const deviceCache = new LRUCache<string, CachedDevice>({
+const deviceCache = new SharedCache<CachedDevice>({
   max: config.deviceCacheMax,
-  ttl: config.deviceCacheTtlMs,
+  ttlMs: config.deviceCacheTtlMs,
+  prefix: 'thay:dev',
+  name: 'device',
 });
 
 function invalidateDevice(deviceId: string): void {
-  deviceCache.delete(deviceId);
+  deviceCache.del(deviceId);
 }
 
 function normalizeScopes(scopes: unknown): string[] {
@@ -191,6 +192,35 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
   }
 });
 
+/** Serve a verify response from a cached device entry (local or remote). */
+function serveCachedDevice(
+  deviceId: string,
+  entry: CachedDevice,
+  payload: DeviceTokenPayload,
+  res: Response,
+): Response {
+  if (entry.revoked) {
+    return res.status(401).json({ valid: false, error: 'Device not found or revoked' });
+  }
+  // Throttle the lastSeenAt write: at most once per throttle window per
+  // device, fire-and-forget (the old code wrote on EVERY verify).
+  if (entry.lastSeenAt === null || Date.now() - entry.lastSeenAt > config.deviceLastSeenThrottleMs) {
+    entry.lastSeenAt = Date.now();
+    void getAdminPb()
+      .then((pb) => pb.collection('devices').update(deviceId, { lastSeenAt: new Date().toISOString() }))
+      .catch(() => {
+        metrics.inc('thay_auth_pb_errors_total', { op: 'deviceLastSeen' });
+      });
+  }
+  return res.status(200).json({
+    valid: true,
+    userId: payload.userId,
+    deviceId: payload.deviceId,
+    scopes: payload.scopes,
+    expiresAt: entry.expiresAt ?? null,
+  });
+}
+
 router.post('/verify', async (req: Request, res: Response) => {
   try {
     const { deviceToken } = req.body;
@@ -203,31 +233,18 @@ router.post('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({ valid: false, error: 'Invalid or expired device token' });
     }
 
-    // Cache hit: zero PB round trips on the steady-state heartbeat path.
-    const cached = deviceCache.get(payload.deviceId);
-    if (cached) {
+    // L1 hit: zero PB round trips on the steady-state heartbeat path.
+    const local = deviceCache.get(payload.deviceId);
+    if (local) {
       metrics.inc('thay_auth_cache_hits_total', { cache: 'device' });
-      if (cached.revoked) {
-        return res.status(401).json({ valid: false, error: 'Device not found or revoked' });
-      }
-      // Throttle the lastSeenAt write: at most once per 5 minutes per
-      // device, fire-and-forget (the old code wrote on EVERY verify —
-      // a PB write per heartbeat under load).
-      if (cached.lastSeenAt === null || Date.now() - cached.lastSeenAt > config.deviceLastSeenThrottleMs) {
-        cached.lastSeenAt = Date.now();
-        void getAdminPb()
-          .then((pb) => pb.collection('devices').update(payload.deviceId, { lastSeenAt: new Date().toISOString() }))
-          .catch(() => {
-            metrics.inc('thay_auth_pb_errors_total', { op: 'deviceLastSeen' });
-          });
-      }
-      return res.status(200).json({
-        valid: true,
-        userId: payload.userId,
-        deviceId: payload.deviceId,
-        scopes: payload.scopes,
-        expiresAt: cached.expiresAt ?? null,
-      });
+      return serveCachedDevice(payload.deviceId, local, payload, res);
+    }
+
+    // L2 (Redis): cross-replica unpair/revoke propagation on local miss.
+    const remote = await deviceCache.getRemote(payload.deviceId);
+    if (remote) {
+      deviceCache.set(payload.deviceId, remote);
+      return serveCachedDevice(payload.deviceId, remote, payload, res);
     }
     metrics.inc('thay_auth_cache_misses_total', { cache: 'device' });
 

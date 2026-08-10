@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import LRUCache from 'lru-cache';
 import { config } from '../config.js';
 import { metrics } from '../utils/metrics.js';
+import { getRedis } from './redis.js';
 
 /**
  * SLIDING WINDOW RATE LIMITER
@@ -65,32 +66,15 @@ class MemoryStore implements RateLimitStore {
 }
 
 class RedisStore implements RateLimitStore {
-  private redis: any = null;
-  private connectPromise: Promise<any> | null = null;
   private seq = 0;
-
-  private async client(): Promise<any> {
-    if (this.redis) return this.redis;
-    if (!this.connectPromise) {
-      // Lazy dynamic import — ioredis is only loaded when REDIS_URL is set.
-      this.connectPromise = (async () => {
-        const { default: Redis } = await import('ioredis');
-        const client = new Redis(config.redisUrl, {
-          lazyConnect: true,
-          maxRetriesPerRequest: 1,
-          enableOfflineQueue: false,
-        });
-        await client.connect();
-        this.redis = client;
-        return client;
-      })();
-    }
-    return this.connectPromise;
-  }
 
   async allow(key: string, windowMs: number, max: number): Promise<{ allowed: boolean; retryAfterSec: number }> {
     try {
-      const redis = await this.client();
+      const redis = await getRedis();
+      // Redis down/unconfigured → fail open: rate limiting degrades,
+      // it must never take auth down.
+      if (!redis) return { allowed: true, retryAfterSec: 0 };
+
       const now = Date.now();
       const min = now - windowMs;
       const member = `${now}:${this.seq++}`;

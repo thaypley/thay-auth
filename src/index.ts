@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { logger, createRequestId, requestContext } from './utils/logger.js';
 import { metrics } from './utils/metrics.js';
 import { closeDirectSql } from './providers/directSqlUsers.js';
+import { closeBcryptPool } from './utils/bcrypt.js';
 import authRouter from './routes/auth.js';
 import devicesRouter from './routes/devices.js';
 import sessionsRouter from './routes/sessions.js';
@@ -134,6 +135,7 @@ function shutdown(signal: string): void {
   force.unref();
   server.close(() => {
     closeDirectSql();
+    closeBcryptPool();
     logger.info('Shutdown complete');
     process.exit(0);
   });

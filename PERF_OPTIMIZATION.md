@@ -261,13 +261,37 @@ allocation beyond the response itself.
    `trust proxy` default reduces spoofed-IP memory attacks.
 
 ### Known limits / required ops practices
-- `node:sqlite` `DatabaseSync` is synchronous — signup statements briefly block the
-  event loop (sub-ms each; rate-limited path). Requires Node ≥ 22.13 (or the
-  `--experimental-sqlite` flag on older 22.x).
-- bcryptjs is pure JS (~78ms cost-10 on dev hardware; more on the capped CPU).
-  Signup throughput is CPU-bound; swap to native `bcrypt` or a worker pool at scale.
-- `revoked` sessions/devices are usable up to the 60s cache TTL (documented,
-  tunable) — align client expectations ("log out" is eventually consistent).
+- Requires Node ≥ 22.13 for `node:sqlite` (the `--experimental-sqlite` flag on
+  older 22.x; the Docker image resolves 22.x latest, which is fine).
+- `revoked` sessions/devices are usable up to the 60s cache TTL **on replicas
+  without Redis**. With REDIS_URL set, cross-replica revocation propagates on
+  the next local cache miss (~0.3ms); the issuing replica is instant either way
+  (`markSessionRevoked`).
+- bcrypt throughput is still CPU-bound (pure JS cost-10 ≈ 78ms/op spread across
+  the worker pool) — the pool keeps the event loop free, but signup volume is
+  ultimately limited by container CPU. Installing the native `bcrypt` package
+  (musl prebuilds for alpine) is a ~4x speedup with zero code change.
 - Protect `/metrics` and `/` at the LB (no auth on them by design).
 - The old global `express.json({limit:'6mb'})` is now 64kb except `/auth/avatar` —
   any client sending >64kb JSON elsewhere will get 413 by design.
+
+### Resolved limits
+- **bcrypt off the event loop:** signup hashing now runs in a worker pool
+  (`utils/bcrypt.ts` + `bcryptWorker.ts`, N lanes, bounded queue, inline safety
+  valve). Measured: 12 concurrent cost-10 hashes → main-thread max stall 17ms
+  (one-off warmup), **p99 stall 0.47ms** — other traffic keeps full speed during
+  signup bursts. The worker core auto-uses native `bcrypt` if an operator adds it
+  (libuv offload + ~4x speed), zero code change.
+- **`node:sqlite` off the event loop:** all direct-DB statements now run in a
+  dedicated worker (`utils/sqliteCore.ts` + `sqliteWorker.ts`). This matters
+  because `busy_timeout=5000` means a write contended with PB's own writer can
+  block for seconds — on the worker that's invisible to the service. Client
+  auto-falls back to in-process if the worker can't start. Also fixed a latent
+  bug the new tests caught: `tokenKey()` could return 49-51 chars (base64
+  +/- stripping) — now a deterministic uniform 50 alphanumeric chars.
+- **Cross-replica revocation latency:** the revocation and device caches are now
+  two-tier (`utils/sharedCache.ts` + shared lazy ioredis in `utils/redis.ts`):
+  L1 in-process LRU (zero I/O hot path) + L2 Redis write-through. With
+  REDIS_URL set, a logout/unpair on replica A is visible to replicas B/C on
+  their next local miss (~0.3ms Redis GET) instead of waiting out the 60s TTL.
+  Without Redis the behavior is unchanged (pure local LRU).

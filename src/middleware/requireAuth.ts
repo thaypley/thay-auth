@@ -7,14 +7,19 @@ import { logger } from '../utils/logger.js';
 import { config } from '../config.js';
 import { metrics } from '../utils/metrics.js';
 import { AppSlug } from '../utils/apps.js';
-import LRUCache from 'lru-cache';
+import { SharedCache } from '../utils/sharedCache.js';
 
 // ============================
-// Session revocation cache (L1)
+// Session revocation cache (L1 + L2)
 // ============================
-const sessionRevocationCache = new LRUCache<string, boolean>({
+// L1 = in-process LRU (zero-I/O hot path). L2 = shared Redis when
+// REDIS_URL is set, so a logout on replica A revokes on replicas B/C on
+// their next local miss — closing the ≤TTL cross-replica window.
+const sessionRevocationCache = new SharedCache<boolean>({
   max: config.cache.revocationMax,
-  ttl: config.cache.revocationTtlMs,
+  ttlMs: config.cache.revocationTtlMs,
+  prefix: 'thay:rev',
+  name: 'revocation',
 });
 
 let lastRevocationWarnAt = 0;
@@ -45,6 +50,14 @@ export async function isSessionRevoked(pb: PocketBase, token: string): Promise<b
     metrics.inc('thay_auth_cache_hits_total', { cache: 'revocation' });
     return cached;
   }
+
+  // L2 (Redis): cross-replica revocation propagation on local miss.
+  const remote = await sessionRevocationCache.getRemote(cacheKey);
+  if (remote !== undefined) {
+    sessionRevocationCache.set(cacheKey, remote);
+    return remote;
+  }
+
   metrics.inc('thay_auth_cache_misses_total', { cache: 'revocation' });
 
   let inflight = revocationInflight.get(cacheKey);

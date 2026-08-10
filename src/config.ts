@@ -123,6 +123,11 @@ export const config = {
   sessionQueueConcurrency: intEnv('SESSION_QUEUE_CONCURRENCY', 16),
   sessionQueueMax: intEnv('SESSION_QUEUE_MAX', 5000),
 
+  // bcrypt worker pool (signup hashing off the event loop). 0 = auto:
+  // min(max(2, cores-1), 4). Queue overflow falls back to inline bcryptjs.
+  bcryptWorkers: intEnv('BCRYPT_WORKERS', 0),
+  bcryptMaxQueue: intEnv('BCRYPT_MAX_QUEUE', 64),
+
   // Optional Redis for horizontally-shared rate limiting. Empty = in-memory.
   redisUrl: process.env.REDIS_URL || '',
 };
