@@ -18,6 +18,14 @@ npm start
 
 `/auth/health` probes PocketBase; use it for orchestrator health.
 
+## Performance
+
+See [`PERF_OPTIMIZATION.md`](PERF_OPTIMIZATION.md) for the full load-optimization
+report: measured latencies (warm `/auth/me` p50 ≈ 0.12ms), cache design, the
+hand-rolled HS256 JWT layer, and the scaling/failure-mode plan. Key runtime
+knobs are documented in `.env.example`; `GET /metrics` exposes Prometheus
+metrics (protect it at the LB).
+
 ## PocketBase paths
 
 - **Default** (admin API): `DIRECT_SQL_USERS` unset.

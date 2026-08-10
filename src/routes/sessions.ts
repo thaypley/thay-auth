@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getAdminPb } from '../providers/pocketbase.js';
-import { requireUser } from '../middleware/requireAuth.js';
+import { requireUser, markSessionRevokedByHash } from '../middleware/requireAuth.js';
 import { logger } from '../utils/logger.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
 
@@ -55,6 +55,8 @@ router.delete('/:id', requireUser, async (req: Request, res: Response) => {
     }
 
     await pb.collection('sessions').update(id, { revoked: true });
+    // Immediate revocation on this instance — no wait for the 60s cache TTL.
+    markSessionRevokedByHash((session as unknown as Record<string, unknown>).tokenHash as string);
     logger.info(`Session revoked: ${id} for user ${req.user!.id}`);
     return res.status(200).json({ success: true });
   } catch {

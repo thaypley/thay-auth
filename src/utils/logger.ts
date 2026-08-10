@@ -1,25 +1,37 @@
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 type LogLevel = keyof typeof LOG_LEVELS;
 
 const currentLevel: LogLevel = (process.env.LOG_LEVEL as LogLevel) || 'info';
 
+/**
+ * Per-request context via AsyncLocalStorage.
+ *
+ * The previous implementation stored the request id in a module-level
+ * mutable (`currentRequestId`), so two interleaved requests corrupted
+ * each other's log attribution after every await — under load every log
+ * line carried a random request id. ALS propagates through async
+ * continuations, giving correct attribution at ~10-50ns per read.
+ */
+export const requestContext = new AsyncLocalStorage<{ reqId: string }>();
+
 export function createRequestId(): string {
   return crypto.randomBytes(8).toString('hex');
 }
 
-let currentRequestId: string | undefined;
-
-export function setRequestId(id: string | undefined) {
-  currentRequestId = id;
+/** Back-compat shim; prefer requestContext.run(). */
+export function setRequestId(id: string | undefined): void {
+  const store = requestContext.getStore();
+  if (store && id) store.reqId = id;
 }
 
 function timestamp(): string {
   return new Date().toISOString();
 }
 
-function log(level: LogLevel, ...args: unknown[]) {
+function log(level: LogLevel, ...args: unknown[]): void {
   if (LOG_LEVELS[level] < LOG_LEVELS[currentLevel]) return;
 
   const entry: Record<string, unknown> = {
@@ -28,7 +40,8 @@ function log(level: LogLevel, ...args: unknown[]) {
     service: 'thay-auth',
   };
 
-  if (currentRequestId) entry.reqId = currentRequestId;
+  const store = requestContext.getStore();
+  if (store?.reqId) entry.reqId = store.reqId;
 
   let message: string | undefined;
   let error: unknown | undefined;

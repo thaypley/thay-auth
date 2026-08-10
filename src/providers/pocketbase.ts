@@ -1,114 +1,244 @@
 import PocketBase from 'pocketbase';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
-import LRUCache from 'lru-cache';
+import { metrics } from '../utils/metrics.js';
+import { hashToken } from '../utils/hashToken.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
+import LRUCache from 'lru-cache';
+
+/**
+ * PocketBase client management, optimized for the verified-token hot path.
+ *
+ * Critical SDK fact: the JS SDK's `send()` auto-cancels the previous
+ * in-flight request that shares a requestKey (default: method + path).
+ * Two concurrent calls to the SAME client with the same path abort each
+ * other. The original code "avoided" this by creating a fresh client per
+ * verify — an allocation per cache miss. All shared clients here call
+ * `autoCancellation(false)` so a pooled client is safe under concurrency.
+ */
 
 const escapeFilterValue = escapePbFilterValue;
 
-// Node.js 18+ uses HTTP keep-alive by default, so each PocketBase
-// instance reuses its TCP connections internally. No extra agent needed.
+// ── Admin client (pooled, mutex-protected auth, fast-fail circuit) ──
+
+const AUTH_REFRESH_MS = 25 * 60 * 1000;
+const AUTH_FAIL_FAST_MS = 5000;
 
 let adminPb: PocketBase | null = null;
-let lastAuthTime = 0;
-const AUTH_REFRESH_MS = 25 * 60 * 1000;
+let lastAuthAt = 0;
+let lastAuthFailureAt = 0;
+let authPromise: Promise<PocketBase> | null = null;
 
 export function createClient(url?: string): PocketBase {
-  return new PocketBase(url || config.pbUrl);
+  const pb = new PocketBase(url || config.pbUrl);
+  // Per-call clients must not auto-cancel either: e.g. two concurrent
+  // /auth/refresh calls on separate clients are fine, but a login and a
+  // signup hitting the same path on the same client would abort.
+  pb.autoCancellation(false);
+  return pb;
 }
 
 export async function getAdminPb(): Promise<PocketBase> {
-  // Fast path: already authenticated within window
-  if (adminPb && Date.now() - lastAuthTime < AUTH_REFRESH_MS) {
-    return adminPb;
-  }
-
-  // Double-checked lock: create fresh instance only if needed
   const now = Date.now();
-  if (adminPb && now - lastAuthTime < AUTH_REFRESH_MS) {
+  if (adminPb && now - lastAuthAt < AUTH_REFRESH_MS) {
     return adminPb;
   }
 
-  const pb = new PocketBase(config.pbUrl);
-  try {
-    await pb.admins.authWithPassword(config.pbAdminEmail, config.pbAdminPassword);
-    adminPb = pb;
-    lastAuthTime = now;
-    logger.info('Admin PocketBase client authenticated');
-    return pb;
-  } catch (err) {
-    logger.error('Failed to authenticate admin PocketBase client:', err);
-    // Return previous client if available — better than failing entirely
-    if (adminPb) {
-      logger.warn('Using stale admin client due to auth failure');
-      return adminPb;
-    }
-    throw err;
+  // Fail-fast circuit: while admin auth is failing, don't hammer PB with
+  // an auth attempt on every request. Serve the stale client if one
+  // exists (its calls will 401 and surface via pb_errors metrics), and
+  // retry auth at most every 5s.
+  if (lastAuthFailureAt !== 0 && now - lastAuthFailureAt < AUTH_FAIL_FAST_MS) {
+    if (adminPb) return adminPb;
+    throw new Error('PB admin auth failing (circuit open)');
   }
+
+  // Single-flight: concurrent cold calls share ONE auth attempt instead
+  // of each re-authenticating (the old code's "double-checked lock" had
+  // an await between check and set, so N concurrent requests created N
+  // clients and N auth calls).
+  if (!authPromise) {
+    authPromise = (async () => {
+      const pb = new PocketBase(config.pbUrl);
+      pb.autoCancellation(false);
+      await pb.admins.authWithPassword(config.pbAdminEmail, config.pbAdminPassword);
+      adminPb = pb;
+      lastAuthAt = Date.now();
+      lastAuthFailureAt = 0;
+      return pb;
+    })().catch((err: unknown) => {
+      authPromise = null;
+      lastAuthFailureAt = Date.now();
+      metrics.inc('thay_auth_pb_errors_total', { op: 'adminAuth' });
+      logger.error('Failed to authenticate admin PocketBase client:', err);
+      if (adminPb) return adminPb; // degraded: stale token, ops will 401
+      throw err;
+    });
+  }
+  return authPromise;
 }
 
-// ============================
-// Token verification cache (L1 in-process cache)
-// ============================
+// ── Shared verification client ─────────────────────────────────────
+// One pooled client for authRefresh calls (auto-cancellation disabled).
+// Safe under concurrency because the SDK reads authStore.token
+// synchronously at send()-time, and each caller saves its own token
+// immediately before the call.
 
-const tokenCache = new LRUCache<string, { user: Record<string, unknown>; expiresAt: number }>({
-  max: 50000,           // ~50k cached tokens
-  ttl: 30 * 24 * 60 * 60 * 1000, // up to 30 days (matches token expiry)
-  dispose: (_value, _key) => { /* optional cleanup hook */ },
+let verifyPb: PocketBase | null = null;
+
+export function getVerifyClient(): PocketBase {
+  if (!verifyPb) {
+    verifyPb = createClient();
+  }
+  return verifyPb;
+}
+
+// ── Verified-token cache (L1) ──────────────────────────────────────
+// Key = sha256(token) (64 hex chars) instead of the raw ~800B token:
+// 20k keys ≈ 1.3MB vs ~16MB, and a leaked cache contains no tokens.
+// Value = slimmed user record (~400B) rather than the full PB record.
+
+export interface CachedUser {
+  id: string;
+  email: string;
+  username: string;
+  accountType: string;
+  isVerified: boolean;
+  isArchitect: boolean;
+  tier: string;
+  avatar: string;
+  birthday: string;
+  created: string;
+  updated: string;
+}
+
+const tokenCache = new LRUCache<string, { user: CachedUser; expiresAt: number }>({
+  max: config.cache.tokenMax,
+  ttl: config.cache.tokenTtlMs,
 });
 
+const tokenInflight = new Map<string, Promise<{ user: CachedUser; expiresAt: number } | null>>();
+const MAX_INFLIGHT = 10000;
+
 /**
- * verifyUserToken — reuses pooled client + caches verified tokens.
- * Avoids network call for subsequent refreshes within the same session window.
+ * Cold-start semaphore: a fresh instance receiving thousands of distinct
+ * first-time tokens must not fire thousands of concurrent authRefresh
+ * calls at PB. Bounded to PB_VERIFY_CONCURRENCY (default 32) in-flight
+ * verifies; the rest queue microtask-style (zero timers).
  */
-export async function verifyUserToken(token: string): Promise<{ user: Record<string, unknown>; pb: PocketBase } | null> {
-  // Check L1 cache first — serves most frequent case (token refresh within window)
-  const cached = tokenCache.get(token);
-  if (cached) {
-    const now = Date.now();
-    if (now < cached.expiresAt) {
-      // Reuse an existing PB client (either fresh or stale)
-      const pb = adminPb || createClient();
-      return { user: cached.user, pb };
-    } else {
-      // Stale cache entry — remove it
-      tokenCache.delete(token);
-    }
+const VERIFY_CONCURRENCY = Math.max(4, parseInt(process.env.PB_VERIFY_CONCURRENCY || '32', 10) || 32);
+let verifyRunning = 0;
+const verifyWaiters: Array<() => void> = [];
+
+function acquireVerify(): Promise<void> {
+  if (verifyRunning < VERIFY_CONCURRENCY) {
+    verifyRunning += 1;
+    return Promise.resolve();
   }
+  return new Promise((resolve) => verifyWaiters.push(resolve));
+}
 
-  try {
-    const pb = createClient(); // Use pooled client
-    pb.authStore.save(token, null);
-    const authData = await pb.collection('users').authRefresh();
-
-    // Compute actual expiry from the JWT token payload
-    let expiresIn = config.tokenExpiryMs;
-    try {
-      const payload = JSON.parse(Buffer.from(authData.token.split('.')[1], 'base64').toString());
-      if (payload.exp) {
-        expiresIn = Math.min(payload.exp * 1000 - Date.now(), config.tokenExpiryMs);
-      }
-    } catch { /* fallback to default expiry */ }
-    const expiresAt = Date.now() + Math.max(expiresIn, 60000); // at least 1 minute
-
-    // Cache the result for future reuse
-    tokenCache.set(token, { user: authData.record as unknown as Record<string, unknown>, expiresAt });
-
-    return { user: authData.record as unknown as Record<string, unknown>, pb };
-  } catch (err) {
-    logger.debug('Token verification failed', err);
-    tokenCache.delete(token); // Invalidate on any failure
-    return null;
+function releaseVerify(): void {
+  const next = verifyWaiters.shift();
+  if (next) {
+    next();
+  } else {
+    verifyRunning -= 1;
   }
 }
 
-// ============================
-// User lookup cache (L1 by email/username)
-// ============================
+function slimUser(record: Record<string, unknown>): CachedUser {
+  // Explicit field picks only — never spread the whole record (it can
+  // carry app-specific blobs that would bloat every cache entry).
+  return {
+    id: (record.id as string) || '',
+    email: (record.email as string) || '',
+    username: (record.username as string) || '',
+    accountType: (record.accountType as string) || '',
+    isVerified: !!record.isVerified,
+    isArchitect: !!record.isArchitect,
+    tier: (record.tier as string) || 'free',
+    avatar: (record.avatar as string) || '',
+    birthday: (record.birthday as string) || '',
+    created: (record.created as string) || '',
+    updated: (record.updated as string) || '',
+  };
+}
+
+function computeExpiresAt(freshToken: string): number {
+  // Real expiry from the JWT payload — avoids trusting a mirrored constant.
+  try {
+    const payload = JSON.parse(Buffer.from(freshToken.split('.')[1] || '', 'base64url').toString());
+    if (payload && typeof payload.exp === 'number') {
+      const ms = Math.min(payload.exp * 1000 - Date.now(), config.tokenExpiryMs);
+      return Date.now() + Math.max(ms, 60000);
+    }
+  } catch {
+    /* fall through to default expiry */
+  }
+  return Date.now() + config.tokenExpiryMs;
+}
+
+async function doVerify(token: string): Promise<{ user: CachedUser; expiresAt: number } | null> {
+  const pb = getVerifyClient();
+  await acquireVerify();
+  try {
+    pb.authStore.save(token, null);
+    const authData = await pb.collection('users').authRefresh();
+    return {
+      user: slimUser(authData.record as unknown as Record<string, unknown>),
+      expiresAt: computeExpiresAt(authData.token),
+    };
+  } catch {
+    metrics.inc('thay_auth_pb_errors_total', { op: 'authRefresh' });
+    return null;
+  } finally {
+    releaseVerify();
+  }
+}
+
+export async function verifyUserToken(token: string): Promise<{ user: CachedUser; pb: PocketBase } | null> {
+  const key = hashToken(token);
+
+  const cached = tokenCache.get(key);
+  if (cached) {
+    if (Date.now() < cached.expiresAt) {
+      metrics.inc('thay_auth_cache_hits_total', { cache: 'token' });
+      return { user: cached.user, pb: getVerifyClient() };
+    }
+    tokenCache.delete(key);
+  }
+  metrics.inc('thay_auth_cache_misses_total', { cache: 'token' });
+
+  // Single-flight: a cold cache (deploy, restart, spike) must not turn
+  // into an authRefresh stampede — one in-flight verify per unique token.
+  let inflight = tokenInflight.get(key);
+  if (!inflight) {
+    if (tokenInflight.size >= MAX_INFLIGHT) {
+      // Extremely unlikely; fall back to a direct verify rather than
+      // queueing behind thousands of distinct tokens.
+      const result = await doVerify(token);
+      if (result) tokenCache.set(key, result);
+      return result ? { user: result.user, pb: getVerifyClient() } : null;
+    }
+    inflight = doVerify(token).finally(() => tokenInflight.delete(key));
+    tokenInflight.set(key, inflight);
+  }
+
+  const result = await inflight;
+  if (result) {
+    tokenCache.set(key, result);
+    return { user: result.user, pb: getVerifyClient() };
+  }
+  tokenCache.delete(key);
+  return null;
+}
+
+// ── User lookup cache (L1 by email/username) ───────────────────────
 
 const userLookupCache = new LRUCache<string, Record<string, unknown> | null>({
-  max: 10000,             // 10k cached lookups
-  ttl: 60000,             // 1 minute TTL
+  max: config.cache.userMax,
+  ttl: config.cache.userTtlMs,
 });
 
 export async function findUserByEmail(email: string): Promise<Record<string, unknown> | null> {
@@ -118,16 +248,17 @@ export async function findUserByEmail(email: string): Promise<Record<string, unk
 
   try {
     const pb = await getAdminPb();
-    const escaped = escapeFilterValue(email);
+    const escaped = escapeFilterValue(key);
     const result = await pb.collection('users').getList(1, 1, {
       filter: `email=${escaped}`,
     });
-    const found = result.items[0] as unknown as Record<string, unknown> || null;
+    const found = (result.items[0] as unknown as Record<string, unknown>) || null;
     userLookupCache.set(key, found);
     return found;
   } catch (err) {
+    metrics.inc('thay_auth_pb_errors_total', { op: 'findUserByEmail' });
     logger.warn('findUserByEmail error', err);
-    userLookupCache.set(key, null); // Cache miss as negative
+    userLookupCache.set(key, null); // negative cache — avoids repeat probes
     return null;
   }
 }
@@ -139,18 +270,17 @@ export async function findUserByUsername(username: string): Promise<Record<strin
 
   try {
     const pb = await getAdminPb();
-    const escaped = escapeFilterValue(username);
+    const escaped = escapeFilterValue(key);
     const result = await pb.collection('users').getList(1, 1, {
       filter: `username=${escaped}`,
     });
-    const found = result.items[0] as unknown as Record<string, unknown> || null;
+    const found = (result.items[0] as unknown as Record<string, unknown>) || null;
     userLookupCache.set(key, found);
     return found;
   } catch (err) {
+    metrics.inc('thay_auth_pb_errors_total', { op: 'findUserByUsername' });
     logger.warn('findUserByUsername error', err);
     userLookupCache.set(key, null);
     return null;
   }
 }
-
-

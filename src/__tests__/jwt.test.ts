@@ -1,7 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import jwt from 'jsonwebtoken';
+import crypto from 'node:crypto';
 import { signUserToken, verifyUserToken, signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
 import { config } from '../config.js';
+
+// Build a raw HS256 token locally (jwt.ts is dependency-free by design —
+// jsonwebtoken is no longer in the dependency tree).
+function signRaw(payload: Record<string, unknown>): string {
+  const h = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const p = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const sig = crypto.createHmac('sha256', config.jwtSecret).update(`${h}.${p}`).digest('base64url');
+  return `${h}.${p}.${sig}`;
+}
 
 describe('user session token (aud-scoped wrapper)', () => {
   it('round-trips sub, aud and pbToken', () => {
@@ -21,8 +30,18 @@ describe('user session token (aud-scoped wrapper)', () => {
   });
 
   it('rejects a token missing pbToken', () => {
-    const t = jwt.sign({ type: 'user', sub: 'u1', aud: 'homebase' }, config.jwtSecret, { expiresIn: '30d' });
+    const t = signRaw({ type: 'user', sub: 'u1', aud: 'homebase', iat: 1, exp: 4102444800 });
     expect(verifyUserToken(t)).toBeNull();
+  });
+
+  it('rejects an expired token', () => {
+    const t = signRaw({ type: 'user', sub: 'u1', aud: 'homebase', pbToken: 'x', iat: 1, exp: 1 });
+    expect(verifyUserToken(t)).toBeNull();
+  });
+
+  it('rejects a token with a tampered signature', () => {
+    const t = signUserToken('u1', 'tunes', 'inner');
+    expect(verifyUserToken(`${t.slice(0, -1)}A`)).toBeNull();
   });
 
   it('rejects garbage', () => {

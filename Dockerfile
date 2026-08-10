@@ -1,3 +1,5 @@
+# Node 22.13+ required: the DIRECT_SQL_USERS path uses node:sqlite
+# (unflagged from 22.13; --experimental-sqlite needed on older 22.x).
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./

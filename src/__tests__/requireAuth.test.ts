@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type PocketBase from 'pocketbase';
-import { isSessionRevoked, requireUser, requireUserForApp } from '../middleware/requireAuth.js';
+import { isSessionRevoked, requireUser, requireUserForApp, markSessionRevoked } from '../middleware/requireAuth.js';
 
 vi.mock('../providers/pocketbase.js', () => ({
   verifyUserToken: vi.fn(),
@@ -54,6 +54,24 @@ describe('isSessionRevoked', () => {
       }),
     } as unknown as PocketBase;
     expect(await isSessionRevoked(pb, 'token-error')).toBe(true);
+  });
+
+  it('markSessionRevoked takes effect immediately without a PB call', async () => {
+    const pb = mockPb([{ revoked: false }]);
+    const token = 'token-fast-revoke';
+    expect(await isSessionRevoked(pb, token)).toBe(false);
+
+    // Logout fast-path: flips the cache so the next check is a local hit.
+    markSessionRevoked(token);
+
+    let calls = 0;
+    const spyPb = {
+      collection: () => ({
+        getList: async () => { calls += 1; return { items: [{ revoked: false }] }; },
+      }),
+    } as unknown as PocketBase;
+    expect(await isSessionRevoked(spyPb, token)).toBe(true);
+    expect(calls).toBe(0);
   });
 });
 

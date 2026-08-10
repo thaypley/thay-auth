@@ -1,20 +1,28 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { createClient, getAdminPb } from '../providers/pocketbase.js';
-import { createUserDirect, userExistsDirect, redeemInviteDirect } from '../providers/directSqlUsers.js';
+import {
+  createUserDirect,
+  userExistsDirect,
+  redeemInviteDirect,
+  DuplicateFieldError,
+} from '../providers/directSqlUsers.js';
 import { signUserToken } from '../providers/jwt.js';
-import { requireUser } from '../middleware/requireAuth.js';
+import { requireUser, markSessionRevoked } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { metrics } from '../utils/metrics.js';
 import { rateLimit } from '../utils/rateLimit.js';
 import { hashToken } from '../utils/hashToken.js';
 import { normalizeApp } from '../utils/apps.js';
+import { BoundedQueue } from '../utils/asyncQueue.js';
 import {
   validateEmail, validatePassword, validateUsername,
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
+import LRUCache from 'lru-cache';
 
 const strictAuthLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'auth-strict' });
 const loginLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 15, keyPrefix: 'auth-login' });
@@ -58,8 +66,6 @@ function avatarUrl(record: Record<string, unknown>): string {
 function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
   return {
     id: record.id,
-    // PB hides `email` from admin reads when emailVisibility is off; fall
-    // back to the caller-supplied identity (owner-scope reads include it).
     email: record.email || emailFallback,
     username: record.username,
     accountType: record.accountType,
@@ -73,26 +79,54 @@ function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
   };
 }
 
-async function recordSession(
-  pb: Awaited<ReturnType<typeof getAdminPb>>,
-  userId: string,
-  token: string,
-  app: unknown,
-  req: Request,
-): Promise<void> {
-  try {
-    await pb.collection('sessions').create({
-      userId,
-      tokenHash: hashToken(token),
-      app: normalizeApp(app),
-      ip: req.ip,
-      userAgent: (req.headers['user-agent'] as string || '').slice(0, 500),
-      expiresAt: new Date(Date.now() + config.tokenExpiryMs).toISOString(),
-      revoked: false,
-    });
-  } catch (err) {
+// ── Session audit writes: fire-and-forget through a bounded queue ──
+// Login/signup/refresh responses must NOT block on the sessions write
+// (an extra PB round trip on the hot path). The queue bounds the
+// in-memory backlog; overflow is dropped and counted, never blocking.
+
+interface SessionRecord {
+  userId: string;
+  token: string;
+  app: unknown;
+  ip: string | undefined;
+  userAgent: string;
+  expiresAt: string;
+}
+
+async function writeSession(rec: SessionRecord): Promise<void> {
+  const pb = await getAdminPb();
+  await pb.collection('sessions').create({
+    userId: rec.userId,
+    tokenHash: hashToken(rec.token),
+    app: normalizeApp(rec.app),
+    ip: rec.ip,
+    userAgent: rec.userAgent,
+    expiresAt: rec.expiresAt,
+    revoked: false,
+  });
+}
+
+const sessionQueue = new BoundedQueue<SessionRecord>(writeSession, {
+  concurrency: config.sessionQueueConcurrency,
+  maxQueue: config.sessionQueueMax,
+  onDrop: () => metrics.inc('thay_auth_session_queue_dropped_total'),
+  onError: (err) => {
+    metrics.inc('thay_auth_pb_errors_total', { op: 'recordSession' });
     logger.warn('recordSession failed (non-fatal)', { error: err });
-  }
+  },
+});
+
+function enqueueSession(userId: string, token: string, app: unknown, req: Request): void {
+  sessionQueue.push({
+    userId,
+    token,
+    app,
+    ip: req.ip,
+    // PB's userAgent field has a max of 500 — truncate at the source so
+    // the audit write can never fail collection validation.
+    userAgent: ((req.headers['user-agent'] as string) || '').slice(0, 500),
+    expiresAt: new Date(Date.now() + config.tokenExpiryMs).toISOString(),
+  });
 }
 
 async function revokeSessionByToken(pb: Awaited<ReturnType<typeof getAdminPb>>, token: string): Promise<boolean> {
@@ -108,9 +142,126 @@ async function revokeSessionByToken(pb: Awaited<ReturnType<typeof getAdminPb>>, 
     );
     return true;
   } catch (err) {
+    metrics.inc('thay_auth_pb_errors_total', { op: 'revokeSession' });
     logger.warn('revokeSessionByToken failed', { error: err });
     return false;
   }
+}
+
+// ── Public catalog cache (L1, stale-while-revalidate) ──────────────
+// /auth/catalog is unauthenticated and identical for every caller — the
+// single highest-value cache target. Stale-while-revalidate keeps p95
+// flat during PB latency spikes; the CDN/edge layer should front this
+// route as well (see scalability notes).
+
+let catalogCache: { apps: unknown[]; fetchedAt: number } | null = null;
+let catalogFetching: Promise<unknown[]> | null = null;
+
+async function fetchCatalog(pb: Awaited<ReturnType<typeof getAdminPb>>): Promise<unknown[]> {
+  const apps = await safeList(pb, 'catalog_apps', 1, 100, {
+    filter: 'published=true',
+    sort: 'sortOrder',
+  });
+  const mapped = apps.items.map((a: unknown) => {
+    const rec = a as Record<string, unknown>;
+    return {
+      slug: rec.slug,
+      displayName: rec.displayName,
+      tagline: rec.tagline,
+      description: rec.description,
+      iconUrl: rec.iconUrl,
+      isFree: rec.isFree,
+      price: rec.price,
+      version: rec.version,
+      downloads: rec.downloads || {},
+    };
+  });
+  catalogCache = { apps: mapped, fetchedAt: Date.now() };
+  return mapped;
+}
+
+async function getCatalogApps(pb: Awaited<ReturnType<typeof getAdminPb>>): Promise<unknown[]> {
+  const now = Date.now();
+  if (catalogCache && now - catalogCache.fetchedAt < config.catalogCacheTtlMs) {
+    metrics.inc('thay_auth_cache_hits_total', { cache: 'catalog' });
+    return catalogCache.apps;
+  }
+  if (catalogCache) {
+    // Stale: serve immediately, refresh in background (single-flight).
+    metrics.inc('thay_auth_cache_hits_total', { cache: 'catalog-stale' });
+    if (!catalogFetching) {
+      catalogFetching = fetchCatalog(pb).finally(() => {
+        catalogFetching = null;
+      });
+    }
+    return catalogCache.apps;
+  }
+  metrics.inc('thay_auth_cache_misses_total', { cache: 'catalog' });
+  if (!catalogFetching) {
+    catalogFetching = fetchCatalog(pb).finally(() => {
+      catalogFetching = null;
+    });
+  }
+  return catalogFetching;
+}
+
+// ── Per-user caches (30s) with explicit invalidation ───────────────
+// Split caches: /me only needs the user record; /profile additionally
+// needs characteristics. Sharing one entry forced /me to fetch rows it
+// never reads — the two caches make each endpoint pay only for its own
+// data. Every user-mutating route below calls invalidateUserCache(id).
+
+const userCache = new LRUCache<string, Record<string, unknown>>({
+  max: config.profileCacheMax,
+  ttl: config.profileCacheTtlMs,
+});
+
+const charsCache = new LRUCache<string, Record<string, string>>({
+  max: config.profileCacheMax,
+  ttl: config.profileCacheTtlMs,
+});
+
+function invalidateUserCache(userId: string): void {
+  userCache.delete(userId);
+  charsCache.delete(userId);
+}
+
+async function getUserData(
+  pb: Awaited<ReturnType<typeof getAdminPb>>,
+  userId: string,
+): Promise<Record<string, unknown>> {
+  const cached = userCache.get(userId);
+  if (cached) {
+    metrics.inc('thay_auth_cache_hits_total', { cache: 'user' });
+    return cached;
+  }
+  metrics.inc('thay_auth_cache_misses_total', { cache: 'user' });
+  const user = await pb.collection('users').getOne(userId);
+  const record = user as unknown as Record<string, unknown>;
+  userCache.set(userId, record);
+  return record;
+}
+
+async function getCharsData(
+  pb: Awaited<ReturnType<typeof getAdminPb>>,
+  userId: string,
+): Promise<Record<string, string>> {
+  const cached = charsCache.get(userId);
+  if (cached) {
+    metrics.inc('thay_auth_cache_hits_total', { cache: 'chars' });
+    return cached;
+  }
+  metrics.inc('thay_auth_cache_misses_total', { cache: 'chars' });
+  const charsList = await safeList(pb, 'user_characteristics', 1, 200, {
+    filter: `userId="${escapePbFilterValue(userId)}"`,
+  });
+  const chars: Record<string, string> = {};
+  for (const c of charsList.items) {
+    const rec = c as unknown as Record<string, string>;
+    chars[rec.key] = rec.value;
+  }
+  charsCache.set(userId, chars);
+  return chars;
 }
 
 // ─── Invite ────────────────────────────────────────────────────────
@@ -225,9 +376,9 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
     let userId: string;
     let redeemSucceeded = false;
     if (config.directSqlUsers) {
-      // Pre-check duplicates before spending a bcrypt round. The unique
-      // indexes are the real enforcement; this only short-circuits the
-      // common case and returns a stable, non-enumerable error.
+      // Pre-check duplicates before spending a bcrypt round (~78ms). The
+      // unique indexes are the real enforcement; createUserDirect maps a
+      // lost race to a DuplicateFieldError below.
       const dupes = userExistsDirect(config.pbDataPath, normalizedEmail, sanitizedUsername);
       if (dupes.email) {
         return res.status(400).json({ error: 'An account with this email already exists' });
@@ -284,9 +435,9 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
 
     const userPb = createClient();
     const authData = await userPb.collection('users').authWithPassword(normalizedEmail, password);
-    await recordSession(pb, userId, authData.token, app, req);
+    enqueueSession(userId, authData.token, app, req);
 
-    logger.info(`User signed up: ${userId} (${sanitizedUsername})${config.directSqlUsers ? ' [direct-sql]' : ''}`);
+    logger.debug(`User signed up: ${userId} (${sanitizedUsername})${config.directSqlUsers ? ' [direct-sql]' : ''}`);
 
     return res.status(201).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
@@ -294,6 +445,14 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
       sessionToken: signUserToken(userId, normalizeApp(app), authData.token),
     });
   } catch (err: unknown) {
+    if (err instanceof DuplicateFieldError) {
+      // Lost a UNIQUE race between the pre-check and the INSERT.
+      return res.status(400).json({
+        error: err.field === 'email'
+          ? 'An account with this email already exists'
+          : 'An account with this username already exists',
+      });
+    }
     logger.error('signup error:', err);
     // Fail generically — never leak whether an email/username is taken via
     // PB's raw error (that's the enumeration fix).
@@ -323,9 +482,7 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
           // PocketBase hides `email` from admin reads when the record's
           // emailVisibility is off, so found.email can be undefined. Keep the
           // raw username as the fallback — PB's authWithPassword resolves
-          // usernames natively (identityFields: username, email). Without this
-          // the identity becomes undefined and PB rejects with a validation
-          // error, surfacing as a bogus 401 on every username login.
+          // usernames natively.
           loginIdentity = found.email || loginIdentity;
         }
       } catch { /* fall through to username identity */ }
@@ -336,8 +493,8 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
 
     const pb = createClient();
     const authData = await pb.collection('users').authWithPassword(loginIdentity, password);
-    const adminPbForSession = await getAdminPb();
-    await recordSession(adminPbForSession, authData.record.id as string, authData.token, app, req);
+    const userId = authData.record.id as string;
+    enqueueSession(userId, authData.token, app, req);
 
     const record = authData.record as unknown as Record<string, unknown>;
     if (!record.isVerified) {
@@ -345,21 +502,22 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
         error: 'Email not verified',
         code: 'EMAIL_NOT_VERIFIED',
         token: authData.token,
-        sessionToken: signUserToken(authData.record.id as string, normalizeApp(app), authData.token),
+        sessionToken: signUserToken(userId, normalizeApp(app), authData.token),
         user: sanitizeUser(record),
       });
     }
 
-    logger.info(`User logged in: ${authData.record.id} (${record.username})`);
+    logger.debug(`User logged in: ${userId} (${record.username})`);
 
     return res.status(200).json({
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
       token: authData.token,
-      sessionToken: signUserToken(authData.record.id as string, normalizeApp(app), authData.token),
+      sessionToken: signUserToken(userId, normalizeApp(app), authData.token),
       expiry: Date.now() + config.tokenExpiryMs,
     });
   } catch (err) {
-    logger.warn('login failed:', err);
+    metrics.inc('thay_auth_login_failures_total');
+    logger.debug('login failed:', err);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
 });
@@ -371,10 +529,14 @@ router.post('/logout', requireUser, async (req: Request, res: Response) => {
     const pb = await getAdminPb();
     const revoked = await revokeSessionByToken(pb, req.pbToken!);
 
+    // Fast-path: make the next request with this token 401 immediately,
+    // without waiting for the 60s revocation-cache TTL.
+    markSessionRevoked(req.pbToken!);
+
     if (revoked) {
-      logger.info(`Session revoked on logout for user ${req.user!.id}`);
+      logger.debug(`Session revoked on logout for user ${req.user!.id}`);
     } else {
-      logger.warn(`Logout: no session found to revoke for user ${req.user!.id}`);
+      logger.debug(`Logout: no session found to revoke for user ${req.user!.id}`);
     }
 
     return res.status(200).json({ success: true });
@@ -387,8 +549,9 @@ router.post('/logout', requireUser, async (req: Request, res: Response) => {
 router.get('/me', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const user = await pb.collection('users').getOne(req.user!.id);
-    return res.status(200).json(sanitizeUser(user as unknown as Record<string, unknown>, req.user?.email || ''));
+    // /me only needs the user record — never pays for characteristics.
+    const user = await getUserData(pb, req.user!.id);
+    return res.status(200).json(sanitizeUser(user, req.user?.email || ''));
   } catch (err) {
     logger.error('/me error:', err);
     return res.status(500).json({ error: 'Failed to fetch user' });
@@ -400,11 +563,11 @@ router.post('/refresh', requireUser, async (req: Request, res: Response) => {
     const pb = createClient();
     pb.authStore.save(req.pbToken!, null);
     const authData = await pb.collection('users').authRefresh();
-    const adminPbForSession = await getAdminPb();
-    await recordSession(adminPbForSession, authData.record.id as string, authData.token, req.body?.app, req);
+    const userId = authData.record.id as string;
+    enqueueSession(userId, authData.token, req.body?.app, req);
     return res.status(200).json({
       token: authData.token,
-      sessionToken: signUserToken(authData.record.id as string, normalizeApp(req.body?.app), authData.token),
+      sessionToken: signUserToken(userId, normalizeApp(req.body?.app), authData.token),
       user: sanitizeUser(authData.record as unknown as Record<string, unknown>),
     });
   } catch {
@@ -466,6 +629,7 @@ router.post('/verify-email', strictAuthLimit, requireUser, async (req: Request, 
       emailVerificationCode: '',
       emailVerificationCodeExpiry: '',
     });
+    invalidateUserCache(req.user!.id);
 
     return res.status(200).json({ success: true, message: 'Email verified' });
   } catch (err) {
@@ -501,6 +665,7 @@ router.post('/change-username', requireUser, async (req: Request, res: Response)
       username: sanitizedUsername,
       lastUsernameChangeAt: new Date().toISOString(),
     });
+    invalidateUserCache(req.user!.id);
 
     return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
   } catch (err: unknown) {
@@ -546,6 +711,7 @@ router.post('/avatar', avatarLimit, requireUser, async (req: Request, res: Respo
     const form = new FormData();
     form.append('avatar', new Blob([new Uint8Array(bytes)], { type: contentType }), `avatar.${ext}`);
     const updated = await pb.collection('users').update(req.user!.id, form);
+    invalidateUserCache(req.user!.id);
 
     return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
   } catch (err: unknown) {
@@ -559,6 +725,7 @@ router.delete('/avatar', avatarLimit, requireUser, async (req: Request, res: Res
   try {
     const pb = await getAdminPb();
     const updated = await pb.collection('users').update(req.user!.id, { avatar: null });
+    invalidateUserCache(req.user!.id);
     return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
   } catch (err) {
     logger.error('avatar delete error:', err);
@@ -626,7 +793,7 @@ router.post('/confirm-password-reset', strictAuthLimit, async (req: Request, res
 
     return res.status(200).json({ success: true, message: 'Password has been reset. You can now log in.' });
   } catch (err) {
-    logger.warn('confirm-password-reset error:', err);
+    logger.debug('confirm-password-reset error:', err);
     return res.status(400).json({ error: 'Invalid or expired reset link' });
   }
 });
@@ -636,20 +803,11 @@ router.post('/confirm-password-reset', strictAuthLimit, async (req: Request, res
 router.get('/profile', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const user = await pb.collection('users').getOne(req.user!.id);
-    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
-    });
-
-    const characteristics: Record<string, string> = {};
-    for (const c of chars.items) {
-      const rec = c as unknown as Record<string, string>;
-      characteristics[rec.key] = rec.value;
-    }
-
+    const userId = req.user!.id;
+    const [user, chars] = await Promise.all([getUserData(pb, userId), getCharsData(pb, userId)]);
     return res.status(200).json({
-      ...sanitizeUser(user as unknown as Record<string, unknown>),
-      characteristics,
+      ...sanitizeUser(user),
+      characteristics: chars,
     });
   } catch (err) {
     logger.error('/profile GET error:', err);
@@ -664,9 +822,9 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
     const userId = req.user!.id;
 
     if (characteristics && typeof characteristics === 'object') {
-      // First, collect all valid operations (validate sequentially first)
+      // Validate EVERYTHING first (same semantics as before — a bad value
+      // must 400 before any write), collecting the ops.
       const ops: Array<{ key: string; value: string; updateId?: string }> = [];
-      
       for (const [key, value] of Object.entries(characteristics)) {
         if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
         const strVal = String(value).trim();
@@ -680,50 +838,42 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
         if (key === 'bio' && strVal.length > 280) {
           return res.status(400).json({ error: 'Bio must be 280 characters or fewer' });
         }
-
-        // Check if existing record needs update OR create
-        const existing = await pb.collection('user_characteristics').getList(1, 1, {
-          filter: `userId="${escapePbFilterValue(userId)}" && key="${escapePbFilterValue(key)}"`,
-        });
-
-        if (existing.items.length > 0) {
-          ops.push({ key, value: strVal, updateId: existing.items[0].id as string });
-        } else {
-          ops.push({ key, value: strVal });
-        }
+        ops.push({ key, value: strVal });
       }
 
-      // Execute all DB operations in parallel
-      const opPrompts = ops.map(op => {
-        if (op.updateId) {
-          return pb.collection('user_characteristics').update(op.updateId, { value: op.value });
-        } else {
-          return pb.collection('user_characteristics').create({
-            userId,
-            key: op.key,
-            value: op.value,
-            visibility: 'public',
-          });
+      if (ops.length > 0) {
+        // ONE read instead of N (the old code did a getList per key).
+        const existing = await pb.collection('user_characteristics').getList(1, 50, {
+          filter: `userId="${escapePbFilterValue(userId)}"`,
+        });
+        const byKey = new Map<string, string>();
+        for (const c of existing.items) {
+          const rec = c as unknown as Record<string, string>;
+          byKey.set(rec.key, rec.id as string);
         }
-      });
 
-      // Wait for all to complete (fail if any fail, but don't break on partial)
-      await Promise.allSettled(opPrompts);
+        await Promise.allSettled(
+          ops.map((op) => {
+            const updateId = byKey.get(op.key);
+            if (updateId) {
+              return pb.collection('user_characteristics').update(updateId, { value: op.value });
+            }
+            return pb.collection('user_characteristics').create({
+              userId,
+              key: op.key,
+              value: op.value,
+              visibility: 'public',
+            });
+          }),
+        );
+      }
     }
 
-    const user = await pb.collection('users').getOne(userId);
-    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${escapePbFilterValue(userId)}"`,
-    });
-    const charMap: Record<string, string> = {};
-    for (const c of chars.items) {
-      const rec = c as unknown as Record<string, string>;
-      charMap[rec.key] = rec.value;
-    }
-
+    invalidateUserCache(userId);
+    const [user, chars] = await Promise.all([getUserData(pb, userId), getCharsData(pb, userId)]);
     return res.status(200).json({
-      ...sanitizeUser(user as unknown as Record<string, unknown>),
-      characteristics: charMap,
+      ...sanitizeUser(user),
+      characteristics: chars,
     });
   } catch (err) {
     logger.error('/profile PATCH error:', err);
@@ -737,15 +887,8 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
 router.get('/profile/characteristics', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const chars = await safeList(pb, 'user_characteristics', 1, 100, {
-      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
-    });
-    const map: Record<string, string> = {};
-    for (const c of chars.items) {
-      const rec = c as unknown as Record<string, string>;
-      map[rec.key] = rec.value;
-    }
-    return res.status(200).json({ characteristics: map });
+    const chars = await getCharsData(pb, req.user!.id);
+    return res.status(200).json({ characteristics: chars });
   } catch (err) {
     logger.error('/profile/characteristics GET error:', err);
     return res.status(500).json({ error: 'Failed to fetch characteristics' });
@@ -762,15 +905,14 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
     const pb = await getAdminPb();
     const userId = req.user!.id;
 
-    // First, collect all deletion ops and execute in parallel
+    // Collect deletion ops, then creation ops — validated first.
     const existing = await pb.collection('user_characteristics').getList(1, 200, {
       filter: `userId="${escapePbFilterValue(userId)}"`,
     });
-    const deleteOps = existing.items.map(c => pb.collection('user_characteristics').delete(c.id));
+    const deleteOps = existing.items.map((c) => pb.collection('user_characteristics').delete(c.id));
     await Promise.allSettled(deleteOps);
 
-    // Now prepare valid entries for creation (validate sequentially first)
-    const creates: Array<{ key: string; value: string; }> = [];
+    const creates: Array<{ key: string; value: string }> = [];
     for (const [key, value] of Object.entries(characteristics)) {
       if (!VALID_CHARACTERISTIC_KEYS.includes(key)) continue;
       const strVal = String(value).trim();
@@ -783,14 +925,14 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
       creates.push({ key, value: strVal });
     }
 
-    // Execute all creation ops in parallel
-    const createOps = creates.map(entry => pb.collection('user_characteristics').create({
+    const createOps = creates.map((entry) => pb.collection('user_characteristics').create({
       userId,
       key: entry.key,
       value: entry.value,
       visibility: 'public',
     }));
     await Promise.allSettled(createOps);
+    invalidateUserCache(userId);
 
     const map: Record<string, string> = {};
     for (const [key, value] of Object.entries(characteristics)) {
@@ -811,26 +953,8 @@ router.put('/profile/characteristics', requireUser, async (req: Request, res: Re
 router.get('/catalog', async (_req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const apps = await safeList(pb, 'catalog_apps', 1, 100, {
-      filter: 'published=true',
-      sort: 'sortOrder',
-    });
-    return res.status(200).json({
-      apps: apps.items.map((a: unknown) => {
-        const rec = a as Record<string, unknown>;
-        return {
-          slug: rec.slug,
-          displayName: rec.displayName,
-          tagline: rec.tagline,
-          description: rec.description,
-          iconUrl: rec.iconUrl,
-          isFree: rec.isFree,
-          price: rec.price,
-          version: rec.version,
-          downloads: rec.downloads || {},
-        };
-      }),
-    });
+    const apps = await getCatalogApps(pb);
+    return res.status(200).json({ apps });
   } catch (err) {
     logger.error('/catalog GET error:', err);
     return res.status(500).json({ error: 'Failed to fetch catalog' });

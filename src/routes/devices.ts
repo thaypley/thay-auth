@@ -5,13 +5,38 @@ import { signDeviceToken, verifyDeviceToken } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
+import { metrics } from '../utils/metrics.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
+import LRUCache from 'lru-cache';
 
 const router = Router();
 
 // Allowlist of device token scopes — a client cannot invent scopes beyond
-// what the platform defines. Add new scopes here as surfaces onboard.
+// what the platform defines.
 const KNOWN_SCOPES = new Set(['relay:chat', 'relay:du']);
+
+/**
+ * L1 device cache for /devices/verify — the hot path for device
+ * heartbeats. A verified device's row is served from cache for up to
+ * `deviceCacheTtlMs` (60s), so steady-state heartbeats cost ZERO PB
+ * reads. Revocation propagates within the TTL (unpair invalidates the
+ * entry immediately on this instance).
+ */
+interface CachedDevice {
+  revoked: boolean;
+  userId: string;
+  expiresAt: string | null;
+  lastSeenAt: number | null;
+}
+
+const deviceCache = new LRUCache<string, CachedDevice>({
+  max: config.deviceCacheMax,
+  ttl: config.deviceCacheTtlMs,
+});
+
+function invalidateDevice(deviceId: string): void {
+  deviceCache.delete(deviceId);
+}
 
 function normalizeScopes(scopes: unknown): string[] {
   const base = Array.isArray(scopes) ? scopes : [];
@@ -82,6 +107,7 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
         revoked: false,
       });
     }
+    invalidateDevice(device.id as string);
 
     const deviceToken = signDeviceToken(
       device.id as string,
@@ -89,7 +115,7 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
       finalScopes,
     );
 
-    logger.info(`Device paired: ${label} for user ${req.user!.id}`);
+    logger.debug(`Device paired: ${label} for user ${req.user!.id}`);
 
     return res.status(201).json({
       deviceToken,
@@ -120,8 +146,9 @@ router.delete('/unpair', requireUser, async (req: Request, res: Response) => {
 
     const pb = await getAdminPb();
     await pb.collection('devices').update(payload.deviceId, { revoked: true });
+    invalidateDevice(payload.deviceId);
 
-    logger.info(`Device unpaired: ${payload.deviceId} for user ${req.user!.id}`);
+    logger.debug(`Device unpaired: ${payload.deviceId} for user ${req.user!.id}`);
     return res.status(200).json({ success: true });
   } catch (err) {
     logger.error('unpair device error:', err);
@@ -176,16 +203,61 @@ router.post('/verify', async (req: Request, res: Response) => {
       return res.status(401).json({ valid: false, error: 'Invalid or expired device token' });
     }
 
+    // Cache hit: zero PB round trips on the steady-state heartbeat path.
+    const cached = deviceCache.get(payload.deviceId);
+    if (cached) {
+      metrics.inc('thay_auth_cache_hits_total', { cache: 'device' });
+      if (cached.revoked) {
+        return res.status(401).json({ valid: false, error: 'Device not found or revoked' });
+      }
+      // Throttle the lastSeenAt write: at most once per 5 minutes per
+      // device, fire-and-forget (the old code wrote on EVERY verify —
+      // a PB write per heartbeat under load).
+      if (cached.lastSeenAt === null || Date.now() - cached.lastSeenAt > config.deviceLastSeenThrottleMs) {
+        cached.lastSeenAt = Date.now();
+        void getAdminPb()
+          .then((pb) => pb.collection('devices').update(payload.deviceId, { lastSeenAt: new Date().toISOString() }))
+          .catch(() => {
+            metrics.inc('thay_auth_pb_errors_total', { op: 'deviceLastSeen' });
+          });
+      }
+      return res.status(200).json({
+        valid: true,
+        userId: payload.userId,
+        deviceId: payload.deviceId,
+        scopes: payload.scopes,
+        expiresAt: cached.expiresAt ?? null,
+      });
+    }
+    metrics.inc('thay_auth_cache_misses_total', { cache: 'device' });
+
     const pb = await getAdminPb();
     const device = await pb.collection('devices').getOne(payload.deviceId).catch(() => null);
 
     if (!device || (device as unknown as Record<string, unknown>).revoked) {
+      deviceCache.set(payload.deviceId, {
+        revoked: true,
+        userId: payload.userId,
+        expiresAt: null,
+        lastSeenAt: null,
+      });
       return res.status(401).json({ valid: false, error: 'Device not found or revoked' });
     }
 
-    await pb.collection('devices').update(payload.deviceId, {
-      lastSeenAt: new Date().toISOString(),
+    const rec = device as unknown as Record<string, unknown>;
+    deviceCache.set(payload.deviceId, {
+      revoked: false,
+      userId: payload.userId,
+      expiresAt: (rec.expiresAt as string) ?? null,
+      lastSeenAt: Date.now(),
     });
+
+    // First verify after a cache miss writes lastSeen.
+    void pb.collection('devices')
+      .update(payload.deviceId, { lastSeenAt: new Date().toISOString() })
+      .catch(() => {
+        metrics.inc('thay_auth_pb_errors_total', { op: 'deviceLastSeen' });
+      });
 
     return res.status(200).json({
       valid: true,
@@ -193,9 +265,7 @@ router.post('/verify', async (req: Request, res: Response) => {
       deviceId: payload.deviceId,
       scopes: payload.scopes,
       // The device's REAL expiry (set at pair time from config.tokenExpiryMs).
-      // Consumers (the dabba brain's du_paired_devices self-heal) record this
-      // instead of mirroring the TTL constant themselves — one source of truth.
-      expiresAt: (device as unknown as Record<string, unknown>).expiresAt ?? null,
+      expiresAt: (rec.expiresAt as string) ?? null,
     });
   } catch {
     return res.status(500).json({ valid: false, error: 'Verification failed' });
