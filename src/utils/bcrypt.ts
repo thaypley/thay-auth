@@ -1,4 +1,3 @@
-import os from 'node:os';
 import { Worker } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 import bcryptjs from 'bcryptjs';
@@ -28,7 +27,11 @@ const workerUrl = new URL(import.meta.url.endsWith('.ts') ? './bcryptWorker.ts' 
 
 const WORKERS = config.bcryptWorkers > 0
   ? config.bcryptWorkers
-  : Math.min(Math.max(2, (os.availableParallelism?.() ?? os.cpus().length) - 1), 4);
+  // Default 2, not cores-based: the production container is CPU-capped
+  // (cpus: 0.25) where extra lanes buy no throughput but each worker is
+  // a V8 isolate eating the 256MB budget. Two lanes keep the event loop
+  // free during hash bursts; raise with BCRYPT_WORKERS when the cap grows.
+  : 2;
 const MAX_QUEUE = config.bcryptMaxQueue;
 
 interface HashRequest {

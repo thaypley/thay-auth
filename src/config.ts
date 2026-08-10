@@ -123,8 +123,9 @@ export const config = {
   sessionQueueConcurrency: intEnv('SESSION_QUEUE_CONCURRENCY', 16),
   sessionQueueMax: intEnv('SESSION_QUEUE_MAX', 5000),
 
-  // bcrypt worker pool (signup hashing off the event loop). 0 = auto:
-  // min(max(2, cores-1), 4). Queue overflow falls back to inline bcryptjs.
+  // bcrypt worker pool (signup hashing off the event loop). 0 = auto (2
+  // — sized for the 0.25 CPU / 256MB production container). Queue
+  // overflow falls back to inline bcryptjs.
   bcryptWorkers: intEnv('BCRYPT_WORKERS', 0),
   bcryptMaxQueue: intEnv('BCRYPT_MAX_QUEUE', 64),
 
