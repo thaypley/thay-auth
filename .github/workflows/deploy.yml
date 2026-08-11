@@ -14,38 +14,77 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: SSH into VPS and deploy
-        uses: appleboy/ssh-action@v1
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          command_timeout: 10m
-          script: |
-            set -euo pipefail
-            cd /docker/thay-auth
+          node-version: 22
+          cache: npm
+          cache-dependency-path: homebase/package-lock.json
 
-            # 1. Pull latest
-            git pull --ff-only origin main
+      - name: Build homebase SPA
+        working-directory: homebase
+        run: |
+          npm ci
+          npm run build
 
-            # 2. Make PB data dir writable by the in-container 'node' uid (1000)
-            #    so DIRECT_SQL_USERS can write new user rows to PB's sqlite.
-            chown -R 1000:1000 /home/thaypley/pocketbase/pb_data
+      - name: Deploy API, SPA, nginx
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          KEY_FILE="$(mktemp)"
+          printf '%s\n' "$VPS_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          SSH_OPTS="-i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+          SSH_DEST="$VPS_USER@$VPS_HOST"
 
-            # 3. Build + restart
-            docker compose build
-            docker compose up -d
+          echo "→ Deploying thay-auth API"
+          ssh $SSH_OPTS "$SSH_DEST" <<'REMOTE'
+          set -euo pipefail
+          cd /docker/thay-auth
 
-            # 4. Wait for healthy
-            for i in 1 2 3 4 5 6 7 8 9 10; do
-              status=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
-              if [ "$status" = "healthy" ]; then
-                echo "thay-auth is healthy after ${i}0s"
-                break
-              fi
-              sleep 10
-            done
+          # 1. Pull latest
+          git pull --ff-only origin main
 
-            # 5. Tail last 40 lines of build/deploy log on failure
-            docker compose ps
-            docker compose logs --tail=40 thay-auth || true
+          # 2. Make PB data dir writable by the in-container 'node' uid (1000)
+          chown -R 1000:1000 /home/thaypley/pocketbase/pb_data
+
+          # 3. Build + restart
+          docker compose build
+          docker compose up -d
+
+          # 4. Wait for healthy
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            status=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
+            echo "  [${i}0s] ${status}"
+            [ "$status" = "healthy" ] && break
+            sleep 10
+          done
+
+          # 5. Tail logs on failure
+          docker compose ps
+          docker compose logs --tail=40 thay-auth || true
+
+          mkdir -p /var/www/auth.thaypley.com
+          REMOTE
+
+          echo "→ Syncing homebase SPA to VPS"
+          rsync -az --delete --exclude '*.bak' -e "ssh $SSH_OPTS" homebase/dist/ "$SSH_DEST:/var/www/auth.thaypley.com/"
+          ssh $SSH_OPTS "$SSH_DEST" 'cp -f /var/www/auth.thaypley.com/assets/favicon.svg /var/www/auth.thaypley.com/favicon.svg 2>/dev/null || true'
+
+          echo "→ Installing nginx config (auth.thaypley.com + api.thaypley.com)"
+          scp $SSH_OPTS -q config/auth.thaypley.com "$SSH_DEST:/etc/nginx/sites-available/auth.thaypley.com.new"
+          ssh $SSH_OPTS "$SSH_DEST" 'set -euo pipefail
+            cp /etc/nginx/sites-available/auth.thaypley.com /etc/nginx/sites-available/auth.thaypley.com.bak-$(date +%s) 2>/dev/null || true
+            mv /etc/nginx/sites-available/auth.thaypley.com.new /etc/nginx/sites-available/auth.thaypley.com
+            nginx -t
+            systemctl reload nginx
+          '
+
+          rm -f "$KEY_FILE"
+          echo "✓ Deploy complete"
