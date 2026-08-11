@@ -58,6 +58,7 @@ export default async function ProfilePage(container) {
     style: { display: 'none' },
   });
   const avatarHint = h('p', { className: 'input-hint', style: { textAlign: 'center' } }, ['click to change']);
+  const avatarSyncNote = h('p', { className: 'avatar-sync-note' }, ['your photo updates across every thaypley app — thaypley.com, fam, werk, du, tunes, jot, dabba & more.']);
   // programmatic .click() bubbles back to the picker's onClick — don't loop
   avatarFileInput.addEventListener('click', (e) => e.stopPropagation());
   avatarFileInput.addEventListener('change', () => {
@@ -92,7 +93,7 @@ export default async function ProfilePage(container) {
         avatarFileInput.click();
       }
     },
-  }, [avatarPreview, avatarFileInput, avatarHint]);
+  }, [avatarPreview, avatarFileInput, avatarHint, avatarSyncNote]);
 
   const usernameInput = h('input', {
     className: 'input',

@@ -120,6 +120,24 @@ export class ThayAuth {
         const data = await this.request('/auth/catalog');
         return data.apps;
     }
+    async getPlatforms() {
+        const data = await this.request('/auth/platforms');
+        return data.platforms;
+    }
+    async listInvites() {
+        const data = await this.request('/auth/invites');
+        return data.invites;
+    }
+    async createInvite(options = {}) {
+        const data = await this.request('/auth/invites', {
+            method: 'POST',
+            body: JSON.stringify(options),
+        });
+        return data.invite;
+    }
+    async deleteInvite(id) {
+        await this.request(`/auth/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    }
     async checkInviteCode(code) {
         return this.request('/auth/check-invite', {
             method: 'POST',

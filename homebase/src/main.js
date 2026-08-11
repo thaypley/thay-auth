@@ -24,6 +24,8 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage.js'));
 const VerifyPage = lazy(() => import('./pages/VerifyPage.js'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage.js'));
+const PlatformsPage = lazy(() => import('./pages/PlatformsPage.js'));
+const InvitesPage = lazy(() => import('./pages/InvitesPage.js'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.js'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
@@ -94,6 +96,16 @@ route('/profile', async (container) => {
 // Public — no login required, doubles as a marketing page.
 route('/downloads', async (container) => {
   await DownloadsPage(container);
+});
+
+// Public directory — the full thay ecosystem launchpad.
+route('/platforms', async (container) => {
+  await PlatformsPage(container);
+});
+
+// Architect-only invite minting (backend-enforced).
+route('/invites', async (container) => {
+  await InvitesPage(container);
 });
 
 route('/404', async (container) => {

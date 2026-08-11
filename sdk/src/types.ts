@@ -7,8 +7,37 @@ export interface ThayUser {
   isArchitect: boolean;
   tier: string;
   avatar: string;
+  avatarVersion?: number;
   created: string;
   updated: string;
+}
+
+export interface PlatformInfo {
+  slug: string;
+  name: string;
+  url: string;
+  tagline: string;
+  type: 'web' | 'desktop' | 'cli' | 'cloud' | 'mobile' | 'docs';
+}
+
+export interface Invite {
+  id: string;
+  code: string;
+  used: boolean;
+  usedBy: string;
+  usedAt: string;
+  maxUses: number;
+  useCount: number;
+  note: string;
+  createdBy: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface CreateInviteOptions {
+  maxUses?: number;
+  note?: string;
+  expiresAt?: string;
 }
 
 export interface UserProfile extends ThayUser {
@@ -69,6 +98,7 @@ export interface UserApp {
   latestVersion: string;
   autoUpdate: boolean;
   status: string;
+  syncUrl?: string;
   installedAt: string;
   lastUpdatedAt: string;
 }

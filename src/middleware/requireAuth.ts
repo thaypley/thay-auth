@@ -100,6 +100,7 @@ export interface AuthUser {
   id: string;
   email: string;
   username: string;
+  isArchitect?: boolean;
   aud?: AppSlug;
   [key: string]: unknown;
 }
@@ -151,6 +152,7 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
       id: wrapped.sub,
       email: result.user.email,
       username: result.user.username,
+      isArchitect: result.user.isArchitect,
       aud: wrapped.aud,
     };
     return next();
@@ -171,6 +173,7 @@ export async function requireUser(req: Request, res: Response, next: NextFunctio
     id: result.user.id,
     email: result.user.email,
     username: result.user.username,
+    isArchitect: result.user.isArchitect,
   };
   next();
 }
@@ -238,9 +241,30 @@ export function optionalUser(req: Request, res: Response, next: NextFunction) {
           id: result.user.id,
           email: result.user.email,
           username: result.user.username,
+          isArchitect: result.user.isArchitect,
         };
       }
       next();
     })
     .catch(() => next());
+}
+
+/**
+ * requireArchitect — requireUser + architect gate.
+ * Only thay architects (isArchitect=true) may manage invite codes and
+ * platform-wide state. A normal user with a valid token gets 403, not
+ * 401 (they ARE authenticated — they just lack the role).
+ */
+export function requireArchitect(req: Request, res: Response, next: NextFunction) {
+  // requireUser responds 401 itself (missing/invalid token) and only
+  // calls the callback when authenticated. Passing next through keeps
+  // that behavior: a 401 never reaches our gate. Returning the promise
+  // lets Express 5 route rejections into the error handler, matching
+  // the other async middlewares.
+  return requireUser(req, res, () => {
+    if (!req.user?.isArchitect) {
+      return res.status(403).json({ error: 'Architect access required' });
+    }
+    next();
+  });
 }

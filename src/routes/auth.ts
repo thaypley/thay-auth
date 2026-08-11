@@ -8,7 +8,8 @@ import {
   DuplicateFieldError,
 } from '../providers/directSqlUsers.js';
 import { signUserToken } from '../providers/jwt.js';
-import { requireUser, markSessionRevoked } from '../middleware/requireAuth.js';
+import { requireUser, requireArchitect, markSessionRevoked } from '../middleware/requireAuth.js';
+import { OFFICIAL_PLATFORMS } from '../utils/platforms.js';
 import { config } from '../config.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../utils/metrics.js';
@@ -64,6 +65,8 @@ function avatarUrl(record: Record<string, unknown>): string {
 }
 
 function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
+  const rawAvatar = avatarUrl(record);
+  const version = (record.avatarVersion as number) || 0;
   return {
     id: record.id,
     email: record.email || emailFallback,
@@ -72,7 +75,12 @@ function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
     isVerified: record.isVerified || false,
     isArchitect: record.isArchitect || false,
     tier: record.tier || 'free',
-    avatar: avatarUrl(record),
+    // The version query param is the cross-platform cache-bust key:
+    // every thay app hot-links the SAME canonical avatar URL and the
+    // browser fetches a fresh copy the moment thaypley.com OR
+    // auth.thaypley.com changes it (both write to this users record).
+    avatar: rawAvatar ? `${rawAvatar}${rawAvatar.includes('?') ? '&' : '?'}v=${version}` : '',
+    avatarVersion: version,
     birthday: record.birthday || '',
     created: record.created,
     updated: record.updated,
@@ -148,6 +156,18 @@ async function revokeSessionByToken(pb: Awaited<ReturnType<typeof getAdminPb>>, 
   }
 }
 
+// Classify a catalog row into desktop/cli/cloud/web by slug + download
+// key-presence (not value-truthiness — legacy rows ship empty strings).
+// Shared by the cache fill and the API fallback when the `kind` field is
+// missing on a pre-migration row.
+function classifyKind(rec: Record<string, unknown>): string {
+  const slug = (rec.slug as string) || '';
+  if (slug.includes('cli')) return 'cli';
+  if (slug.includes('cloud')) return 'cloud';
+  const dl = (rec.downloads as Record<string, string>) || {};
+  return ('mac' in dl || 'windows' in dl || 'linux' in dl) ? 'desktop' : 'web';
+}
+
 // ── Public catalog cache (L1, stale-while-revalidate) ──────────────
 // /auth/catalog is unauthenticated and identical for every caller — the
 // single highest-value cache target. Stale-while-revalidate keeps p95
@@ -173,6 +193,7 @@ async function fetchCatalog(pb: Awaited<ReturnType<typeof getAdminPb>>): Promise
       isFree: rec.isFree,
       price: rec.price,
       version: rec.version,
+      kind: classifyKind(rec),
       downloads: rec.downloads || {},
     };
   });
@@ -708,10 +729,21 @@ router.post('/avatar', avatarLimit, requireUser, async (req: Request, res: Respo
     }
 
     const pb = await getAdminPb();
+    const current = await pb.collection('users').getOne(req.user!.id);
+    const nextVersion = Number((current as unknown as Record<string, unknown>).avatarVersion || 0) + 1;
+
+    // One multipart update: new file + avatarVersion atomically. The
+    // version number is the cross-app cache-bust — every thay product
+    // renders the canonical URL with ?v=N so this single write
+    // propagates the new avatar to thaypley.com, tunes, jot, dabba,
+    // and every other thay-auth-connected app on their next profile
+    // fetch (the URL changes → fresh image, no forced re-auth).
     const form = new FormData();
     form.append('avatar', new Blob([new Uint8Array(bytes)], { type: contentType }), `avatar.${ext}`);
+    form.append('avatarVersion', String(nextVersion));
     const updated = await pb.collection('users').update(req.user!.id, form);
     invalidateUserCache(req.user!.id);
+    void notifyAvatarSync(req.user!.id, nextVersion);
 
     return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
   } catch (err: unknown) {
@@ -724,8 +756,14 @@ router.post('/avatar', avatarLimit, requireUser, async (req: Request, res: Respo
 router.delete('/avatar', avatarLimit, requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const updated = await pb.collection('users').update(req.user!.id, { avatar: null });
+    const current = await pb.collection('users').getOne(req.user!.id);
+    const nextVersion = Number((current as unknown as Record<string, unknown>).avatarVersion || 0) + 1;
+    const updated = await pb.collection('users').update(req.user!.id, {
+      avatar: null,
+      avatarVersion: nextVersion,
+    });
     invalidateUserCache(req.user!.id);
+    void notifyAvatarSync(req.user!.id, nextVersion);
     return res.status(200).json({ user: sanitizeUser(updated as unknown as Record<string, unknown>) });
   } catch (err) {
     logger.error('avatar delete error:', err);
@@ -981,6 +1019,7 @@ router.get('/apps', requireUser, async (req: Request, res: Response) => {
           latestVersion: rec.latestVersion,
           autoUpdate: rec.autoUpdate,
           status: rec.status || 'installed',
+          syncUrl: rec.syncUrl || '',
           installedAt: rec.installedAt,
           lastUpdatedAt: rec.lastUpdatedAt,
         };
@@ -994,8 +1033,20 @@ router.get('/apps', requireUser, async (req: Request, res: Response) => {
 
 router.post('/apps', requireUser, async (req: Request, res: Response) => {
   try {
-    const { appId, appName, installedVersion, autoUpdate } = req.body;
+    const { appId, appName, installedVersion, autoUpdate, syncUrl } = req.body;
     if (!appId || typeof appId !== 'string') return res.status(400).json({ error: 'appId is required' });
+
+    // Optional per-install avatar-sync endpoint. Must be http(s); capped
+    // at 500 chars (the PB text field limit). This is how a connected
+    // app receives pushed avatar-change webhooks (instant cache
+    // invalidation) in addition to the ?v=avatarVersion cache-bust.
+    let normalizedSyncUrl = '';
+    if (syncUrl) {
+      if (typeof syncUrl !== 'string' || !/^https?:\/\//.test(syncUrl)) {
+        return res.status(400).json({ error: 'syncUrl must be an http(s) URL' });
+      }
+      normalizedSyncUrl = syncUrl.slice(0, 500);
+    }
 
     const pb = await getAdminPb();
     const existing = await pb.collection('user_apps').getList(1, 1, {
@@ -1007,6 +1058,7 @@ router.post('/apps', requireUser, async (req: Request, res: Response) => {
         installedVersion: installedVersion || existing.items[0].installedVersion,
         appName: appName || existing.items[0].appName,
         autoUpdate: autoUpdate !== undefined ? autoUpdate : existing.items[0].autoUpdate,
+        syncUrl: normalizedSyncUrl || existing.items[0].syncUrl,
         lastUpdatedAt: new Date().toISOString(),
         status: 'installed',
       });
@@ -1019,6 +1071,7 @@ router.post('/apps', requireUser, async (req: Request, res: Response) => {
       appName: appName || appId,
       installedVersion: installedVersion || '1.0.0',
       autoUpdate: autoUpdate !== undefined ? autoUpdate : true,
+      ...(normalizedSyncUrl ? { syncUrl: normalizedSyncUrl } : {}),
       installedAt: new Date().toISOString(),
       status: 'installed',
     });
@@ -1050,6 +1103,224 @@ router.delete('/apps/:appId', requireUser, async (req: Request, res: Response) =
   } catch (err) {
     logger.error('/apps DELETE error:', err);
     return res.status(500).json({ error: 'Failed to uninstall app' });
+  }
+});
+
+// ─── Platform Directory ────────────────────────────────────────────
+// Every surface in the thay ecosystem authenticated by thay-auth.
+// Public — the homebase SPA renders the platform hub from this.
+
+router.get('/platforms', async (_req: Request, res: Response) => {
+  try {
+    return res.status(200).json({ platforms: OFFICIAL_PLATFORMS });
+  } catch (err) {
+    logger.error('/platforms error:', err);
+    return res.status(500).json({ error: 'Failed to fetch platforms' });
+  }
+});
+
+// ─── Avatar Sync (cross-platform propagation) ──────────────────────
+// When the canonical avatar changes (thaypley.com or auth.thaypley.com),
+// every connected app must show the new photo. The PRIMARY mechanism is
+// the ?v=avatarVersion cache-bust on the canonical URL — each app
+// re-fetches the URL on its next profile refresh and gets the new
+// image. This fan-out additionally PUSHES a signed webhook to apps that
+// registered a sync endpoint (user_apps.syncUrl, or the env-configured
+// AVATAR_SYNC_WEBHOOKS list), so they can invalidate in-memory caches
+// immediately instead of waiting for the next profile poll.
+
+interface AvatarSyncEvent {
+  userId: string;
+  avatarVersion: number;
+  avatarUrl: string;
+  app: string;
+  endpoint: string;
+}
+
+const avatarSyncQueue = new BoundedQueue<AvatarSyncEvent>(
+  async (evt) => {
+    const hmac = crypto.createHmac('sha256', config.jwtSecret).update(
+      `${evt.userId}.${evt.avatarVersion}.${evt.endpoint}`,
+    ).digest('hex');
+    await fetch(evt.endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Thay-Sync': 'avatar',
+        'X-Thay-Signature': `sha256=${hmac}`,
+      },
+      body: JSON.stringify({
+        userId: evt.userId,
+        avatarVersion: evt.avatarVersion,
+        avatarUrl: evt.avatarUrl,
+        app: evt.app,
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+  },
+  {
+    concurrency: 8,
+    maxQueue: 500,
+    onError: (err, evt) => {
+      metrics.inc('thay_auth_avatar_sync_failures_total', { app: evt.app });
+      logger.warn('avatar sync webhook failed', { app: evt.app, userId: evt.userId, error: err });
+    },
+    onDrop: () => metrics.inc('thay_auth_avatar_sync_dropped_total'),
+  },
+);
+
+const avatarSyncEndpoints: string[] = (
+  process.env.AVATAR_SYNC_WEBHOOKS || ''
+).split(',').map((s) => s.trim()).filter(Boolean);
+
+async function notifyAvatarSync(userId: string, version: number): Promise<void> {
+  try {
+    const pb = await getAdminPb();
+    const user = await pb.collection('users').getOne(userId);
+    const canonical = avatarUrl(user as unknown as Record<string, unknown>);
+    const fullUrl = canonical ? `${canonical}${canonical.includes('?') ? '&' : '?'}v=${version}` : '';
+
+    // 1) Global endpoints from env.
+    for (const endpoint of avatarSyncEndpoints) {
+      avatarSyncQueue.push({
+        userId,
+        avatarVersion: version,
+        avatarUrl: fullUrl,
+        app: 'global',
+        endpoint,
+      });
+    }
+
+    // 2) Per-install sync URLs (apps that registered one when pairing).
+    const installs = await safeList(pb, 'user_apps', 1, 100, {
+      filter: `userId="${escapePbFilterValue(userId)}"`,
+    });
+    for (const record of installs.items) {
+      const rec = record as Record<string, unknown>;
+      const syncUrl = rec.syncUrl as string;
+      if (syncUrl && typeof syncUrl === 'string' && /^https?:\/\//.test(syncUrl)) {
+        avatarSyncQueue.push({
+          userId,
+          avatarVersion: version,
+          avatarUrl: fullUrl,
+          app: (rec.appId as string) || 'unknown',
+          endpoint: syncUrl,
+        });
+      }
+    }
+  } catch (err) {
+    logger.warn('notifyAvatarSync setup failed (non-fatal)', { userId, error: err });
+  }
+}
+
+// ─── Invite Code Management (architect-only) ───────────────────────
+// thay architects mint invite codes from the hub UI or API. Public
+// signup validation stays on POST /auth/check-invite.
+
+const inviteCreateLimit = rateLimit({ windowMs: 60 * 1000, max: 20, keyPrefix: 'auth-invite-create' });
+
+function generateInviteCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let suffix = '';
+  const rand = crypto.randomBytes(8);
+  for (let i = 0; i < 4; i++) {
+    suffix += chars[rand[i] % chars.length];
+  }
+  return `${config.invite.codePrefix}-${suffix}`;
+}
+
+router.get('/invites', requireArchitect, async (_req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const invites = await safeList(pb, 'signup_invites', 1, 500, {
+      sort: '-created',
+    });
+    return res.status(200).json({
+      invites: invites.items.map((a: unknown) => {
+        const rec = a as Record<string, unknown>;
+        return {
+          id: rec.id,
+          code: rec.code,
+          used: !!rec.used,
+          usedBy: rec.usedBy || '',
+          usedAt: rec.usedAt || '',
+          maxUses: rec.maxUses || 1,
+          useCount: rec.useCount || 0,
+          note: rec.note || '',
+          createdBy: rec.createdBy || '',
+          createdAt: rec.created || '',
+          expiresAt: rec.expiresAt || '',
+        };
+      }),
+    });
+  } catch (err) {
+    logger.error('/invites GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch invites' });
+  }
+});
+
+router.post('/invites', inviteCreateLimit, requireArchitect, async (req: Request, res: Response) => {
+  try {
+    const { maxUses, note, expiresAt } = req.body || {};
+    const uses = Math.max(1, Math.min(parseInt(String(maxUses ?? config.invite.defaultMaxUses), 10) || 1, 1000));
+    const trimmedNote = typeof note === 'string' ? note.trim().slice(0, 500) : '';
+
+    let expiry = '';
+    if (expiresAt) {
+      const parsed = new Date(expiresAt);
+      if (isNaN(parsed.getTime())) {
+        return res.status(400).json({ error: 'Invalid expiresAt date' });
+      }
+      expiry = parsed.toISOString();
+    }
+
+    const code = generateInviteCode();
+    const pb = await getAdminPb();
+    const created = await pb.collection('signup_invites').create({
+      code,
+      used: false,
+      usedBy: '',
+      usedAt: '',
+      createdBy: req.user!.id,
+      note: trimmedNote,
+      maxUses: uses,
+      useCount: 0,
+      expiresAt: expiry,
+    });
+
+    return res.status(201).json({
+      invite: {
+        id: created.id,
+        code,
+        used: false,
+        usedBy: '',
+        usedAt: '',
+        maxUses: uses,
+        useCount: 0,
+        note: trimmedNote,
+        createdBy: req.user!.id,
+        createdAt: created.created,
+        expiresAt: expiry,
+      },
+    });
+  } catch (err) {
+    logger.error('/invites POST error:', err);
+    const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to create invite';
+    return res.status(400).json({ error: msg });
+  }
+});
+
+router.delete('/invites/:id', requireArchitect, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id) return res.status(400).json({ error: 'Invite id required' });
+    const pb = await getAdminPb();
+    await pb.collection('signup_invites').delete(id);
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    logger.error('/invites DELETE error:', err);
+    const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to delete invite';
+    return res.status(400).json({ error: msg });
   }
 });
 

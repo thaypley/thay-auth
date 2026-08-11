@@ -54,11 +54,19 @@ jobs:
           # 2. Make PB data dir writable by the in-container 'node' uid (1000)
           chown -R 1000:1000 /home/thaypley/pocketbase/pb_data
 
-          # 3. Build + restart
+          # 3. Build image (includes sync-live-schema.mjs)
           docker compose build
+
+          # 4. Sync live PB schema BEFORE the API restarts — the new code
+          #    reads users.avatarVersion, user_apps.syncUrl, catalog_apps.kind
+          #    and the full roster. The shared prod PB does not auto-run
+          #    pb_migrations/, so this idempotent admin-API sync lands first.
+          docker compose run --rm -T thay-auth node scripts/sync-live-schema.mjs
+
+          # 5. Restart API
           docker compose up -d
 
-          # 4. Wait for healthy
+          # 6. Wait for healthy
           for i in 1 2 3 4 5 6 7 8 9 10; do
             status=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
             echo "  [${i}0s] ${status}"
@@ -66,7 +74,7 @@ jobs:
             sleep 10
           done
 
-          # 5. Tail logs on failure
+          # 7. Tail logs on failure
           docker compose ps
           docker compose logs --tail=40 thay-auth || true
 

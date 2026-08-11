@@ -17,6 +17,8 @@ const ADMIN_PASSWORD = process.env.PB_ADMIN_PASSWORD;
 const PREFIX = process.env.INVITE_CODE_PREFIX || 'TP';
 const COUNT = parseInt(process.argv.find(a => a.startsWith('--count='))?.split('=')[1] || '5', 10);
 const MAX_USES = parseInt(process.argv.find(a => a.startsWith('--max-uses='))?.split('=')[1] || '1', 10);
+const EXPIRES_AT = process.argv.find(a => a.startsWith('--expires-at='))?.split('=')[1] || '';
+const NOTE = process.argv.find(a => a.startsWith('--note='))?.split('=')[1] || '';
 
 if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
   console.error('Error: PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD must be set');
@@ -51,7 +53,8 @@ async function main() {
         used: false,
         maxUses: MAX_USES,
         useCount: 0,
-        note: `Seeded by script on ${new Date().toISOString().split('T')[0]}`,
+        note: NOTE || `Seeded by script on ${new Date().toISOString().split('T')[0]}`,
+        expiresAt: EXPIRES_AT || '',
       });
       created.push(code);
       console.log(`  ✓ ${code}`);

@@ -4,8 +4,17 @@ Universal auth microservice for every thaypley application. Express 5 + PocketBa
 
 ## Endpoints
 
-Public: `GET /`, `GET /auth/health`, `POST /auth/check-invite`, `POST /auth/signup`, `POST /auth/login`, `POST /auth/request-password-reset`, `POST /devices/verify`.
-User: `POST /auth/logout`, `GET /auth/me`, `POST /auth/refresh`, `POST /auth/send-verification`, `POST /auth/verify-email`, `POST /auth/change-username`, `POST /devices/pair`, `DELETE /devices/unpair`, `GET /devices`, `GET /sessions`, `DELETE /sessions/:id`.
+Public: `GET /`, `GET /auth/health`, `GET /auth/platforms` (thay ecosystem directory), `POST /auth/check-invite`, `POST /auth/signup`, `POST /auth/login`, `POST /auth/request-password-reset`, `POST /devices/verify`, `GET /auth/catalog`.
+User: `POST /auth/logout`, `GET /auth/me`, `POST /auth/refresh`, `POST /auth/send-verification`, `POST /auth/verify-email`, `POST /auth/change-username`, `POST /auth/avatar`, `DELETE /auth/avatar`, `GET/PATCH /auth/profile`, `POST /devices/pair`, `DELETE /devices/unpair`, `GET /devices`, `GET /sessions`, `DELETE /sessions/:id`, `GET/POST/DELETE /auth/apps`.
+Architect only (`isArchitect=true`): `GET /auth/invites`, `POST /auth/invites`, `DELETE /auth/invites/:id` — mint & manage thay-auth signup invite codes.
+
+## Platform hub
+
+`GET /auth/platforms` returns every surface authenticated by thay-auth (`thaypley.com`, `fam.thaypley.com`, `werk.thaypley.com`, `du.thaypley.com`, `auth.thaypley.com`, docs). The hub SPA at `auth.thaypley.com/platforms` renders it as a launchpad; `auth.thaypley.com/invites` is an architect-only invite minting UI.
+
+## Cross-platform avatar sync
+
+Avatars are single-sourced on the PB `users` record. Every thay app renders the canonical URL with a `?v=avatarVersion` cache-bust — change your photo on thaypley.com or auth.thaypley.com and every connected app picks it up on its next profile fetch. `POST /auth/avatar` and `DELETE /auth/avatar` also fan out a signed webhook (`X-Thay-Signature: sha256=HMAC`) to endpoints registered in `AVATAR_SYNC_WEBHOOKS` (comma-separated) or per-install `user_apps.syncUrl`, so apps can invalidate in-memory caches instantly.
 
 ## Quick start
 

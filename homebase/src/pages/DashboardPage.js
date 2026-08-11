@@ -173,10 +173,36 @@ export default async function DashboardPage(container) {
       h('div', { className: 'devices-list' }, deviceItems),
     ]);
 
+    // ─── Platform Strip (quick links to the thay web family) ──────
+    // Best-effort: if the directory API hiccups, the dashboard still
+    // renders — links are decorative shortcuts, never load-bearing.
+    let platformLinks = [];
+    try {
+      platformLinks = await auth.getPlatforms();
+    } catch { /* non-fatal */ }
+
+    const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk', 'du'].includes(p.slug));
+    const platformChips = [
+      ...corePlatforms.map((p) => h('a', {
+        className: 'platform-chip',
+        href: p.url,
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      }, [p.name])),
+      h('a', { className: 'platform-chip platform-chip--all', href: '#/platforms' }, ['all platforms →']),
+    ];
+    const platformStrip = h('div', { className: 'glass-card-static platform-strip' }, [
+      h('div', { className: 'section-header' }, [
+        h('h3', {}, ['the thay universe']),
+        h('span', { className: 'input-hint' }, ['one identity, every surface']),
+      ]),
+      h('div', { className: 'platform-chip-row' }, platformChips),
+    ]);
+
     // ─── Layout ────────────────────────────────────────────────────
 
     const leftPanel = h('div', { className: 'dashboard-panel' }, [profileCard]);
-    const rightPanel = h('div', { className: 'dashboard-panel' }, [appsSection, devicesSection]);
+    const rightPanel = h('div', { className: 'dashboard-panel' }, [platformStrip, appsSection, devicesSection]);
 
     const grid = h('div', { className: 'dashboard-grid fade-in' }, [leftPanel, rightPanel]);
     const dashboard = h('div', { className: 'dashboard' }, [grid]);

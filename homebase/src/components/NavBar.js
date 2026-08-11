@@ -20,6 +20,22 @@ export function NavBar() {
     onClick: () => navigate('/downloads'),
   }, ['downloads']);
 
+  const platformsLink = h('button', {
+    className: 'btn btn-ghost btn-sm',
+    onClick: () => navigate('/platforms'),
+  }, ['platforms']);
+
+  // Invite minting is architect-only (the API enforces this too — the
+  // menu item is just the surface). Normal users keep a clean hub.
+  const isArchitect = !!(state.user?.isArchitect || state.profile?.isArchitect);
+  let invitesLink = null;
+  if (isArchitect) {
+    invitesLink = h('button', {
+      className: 'btn btn-ghost btn-sm',
+      onClick: () => navigate('/invites'),
+    }, ['invites']);
+  }
+
   const vibeDots = VIBES.map((v) => h('button', {
     type: 'button',
     className: `vibe-dot${v === current ? ' active' : ''}`,
@@ -35,7 +51,9 @@ export function NavBar() {
   const vibeSwitcher = h('div', { className: 'vibe-switcher' }, vibeDots);
 
   const end = h('div', { className: 'navbar-end' });
+  end.appendChild(platformsLink);
   end.appendChild(downloadsLink);
+  if (invitesLink) end.appendChild(invitesLink);
   end.appendChild(vibeSwitcher);
 
   if (isLoggedIn && user) {

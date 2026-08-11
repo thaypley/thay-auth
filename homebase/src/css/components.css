@@ -879,3 +879,87 @@
   color: var(--vibe-accent);
   text-shadow: 0 0 24px var(--vibe-glow);
 }
+
+/* ─── Platform Hub (platforms page) ────────────────────────────── */
+
+.platform-card {
+  text-decoration: none;
+  transition: transform 240ms var(--spring), box-shadow 240ms var(--ease-out);
+}
+
+.platform-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px var(--vibe-glow);
+  text-decoration: none;
+}
+
+.platform-card .catalog-card-name {
+  color: var(--vibe-text);
+}
+
+/* ─── Invites (architect page) ─────────────────────────────────── */
+
+.invites-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+/* ─── Downloads groups ─────────────────────────────────────────── */
+
+.downloads-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* ─── Avatar sync note (profile page) ──────────────────────────── */
+
+.avatar-sync-note {
+  font-size: var(--font-size-xs);
+  color: var(--vibe-sub);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* ─── Dashboard Platform Strip ─────────────────────────────────── */
+
+.platform-strip {
+  margin-bottom: var(--space-lg);
+}
+
+.platform-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.platform-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-md);
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  border: 1px solid var(--glass-hi);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  font-family: var(--font-display);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--vibe-text);
+  text-decoration: none;
+  transition: all var(--duration-fast) var(--spring);
+}
+
+.platform-chip:hover {
+  background: var(--glass-mid);
+  border-color: var(--vibe-dot);
+  box-shadow: 0 0 12px var(--vibe-glow);
+  text-decoration: none;
+  transform: translateY(-1px);
+}
+
+.platform-chip--all {
+  color: var(--vibe-accent);
+}

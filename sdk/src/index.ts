@@ -1,10 +1,14 @@
 import type {
   ThayUser, UserProfile, AuthSession, DevicePairing, Device,
   Session, SignupData, UserApp, ProfileUpdateData,
-  AuthStateListener,
+  AuthStateListener, PlatformInfo, Invite, CreateInviteOptions,
 } from './types.js';
 
-export type { ThayUser, UserProfile, AuthSession, DevicePairing, Device, Session, SignupData, UserApp, ProfileUpdateData };
+export type {
+  ThayUser, UserProfile, AuthSession, DevicePairing, Device,
+  Session, SignupData, UserApp, ProfileUpdateData,
+  PlatformInfo, Invite, CreateInviteOptions,
+};
 
 export class ThayAuth {
   private baseUrl: string;
@@ -166,6 +170,25 @@ export class ThayAuth {
     });
   }
 
+  // Architect-only invite minting — requires a token whose user has
+  // isArchitect=true. The API enforces this server-side.
+  async listInvites(): Promise<Invite[]> {
+    const data = await this.request<{ invites: Invite[] }>('/auth/invites');
+    return data.invites;
+  }
+
+  async createInvite(options: CreateInviteOptions = {}): Promise<Invite> {
+    const data = await this.request<{ invite: Invite }>('/auth/invites', {
+      method: 'POST',
+      body: JSON.stringify(options),
+    });
+    return data.invite;
+  }
+
+  async deleteInvite(id: string): Promise<void> {
+    await this.request(`/auth/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  }
+
   async joinWaitlist(email: string, note?: string, source?: string): Promise<{ success: boolean; id?: string; message: string }> {
     return this.request('/auth/waitlist', {
       method: 'POST',
@@ -200,16 +223,41 @@ export class ThayAuth {
     return data.apps;
   }
 
-  async registerApp(appId: string, appName?: string, installedVersion?: string, autoUpdate?: boolean): Promise<UserApp> {
+  async registerApp(appId: string, appName?: string, installedVersion?: string, autoUpdate?: boolean, syncUrl?: string): Promise<UserApp> {
     const data = await this.request<{ app: UserApp }>('/auth/apps', {
       method: 'POST',
-      body: JSON.stringify({ appId, appName, installedVersion, autoUpdate }),
+      body: JSON.stringify({ appId, appName, installedVersion, autoUpdate, ...(syncUrl ? { syncUrl } : {}) }),
     });
     return data.app;
   }
 
   async uninstallApp(appId: string): Promise<void> {
     await this.request(`/auth/apps/${encodeURIComponent(appId)}`, { method: 'DELETE' });
+  }
+
+  // ─── Platforms ─────────────────────────────────────────────────────
+
+  async getPlatforms(): Promise<PlatformInfo[]> {
+    const data = await this.request<{ platforms: PlatformInfo[] }>('/auth/platforms');
+    return data.platforms;
+  }
+
+  // ─── Catalog ───────────────────────────────────────────────────────
+
+  async getCatalog(): Promise<Array<{
+    slug: string;
+    displayName: string;
+    tagline?: string;
+    description?: string;
+    iconUrl?: string;
+    isFree?: boolean;
+    price?: string;
+    version?: string;
+    kind?: string;
+    downloads: Record<string, string>;
+  }>> {
+    const data = await this.request<{ apps: Array<{ slug: string; displayName: string; tagline?: string; description?: string; iconUrl?: string; isFree?: boolean; price?: string; version?: string; kind?: string; downloads: Record<string, string> }> }>('/auth/catalog');
+    return data.apps;
   }
 
   // ─── Devices ───────────────────────────────────────────────────────

@@ -107,6 +107,7 @@ export interface CachedUser {
   isArchitect: boolean;
   tier: string;
   avatar: string;
+  avatarVersion: number;
   birthday: string;
   created: string;
   updated: string;
@@ -159,6 +160,7 @@ function slimUser(record: Record<string, unknown>): CachedUser {
     isArchitect: !!record.isArchitect,
     tier: (record.tier as string) || 'free',
     avatar: (record.avatar as string) || '',
+    avatarVersion: Number(record.avatarVersion) || 0,
     birthday: (record.birthday as string) || '',
     created: (record.created as string) || '',
     updated: (record.updated as string) || '',
