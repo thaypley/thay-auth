@@ -63,8 +63,9 @@ jobs:
           #    pb_migrations/, so this idempotent admin-API sync lands first.
           docker compose run --rm -T thay-auth node scripts/sync-live-schema.mjs
 
-          # 5. Restart API
-          docker compose up -d
+          # 5. Restart API — force-recreate is required: compose leaves a
+          #    healthy container untouched when only the image changed.
+          docker compose up -d --force-recreate thay-auth
 
           # 6. Wait for healthy
           for i in 1 2 3 4 5 6 7 8 9 10; do
