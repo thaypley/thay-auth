@@ -1,10 +1,11 @@
 /**
  * Downloads — public catalog of thaypley apps and tools.
  * No login required: doubles as a marketing page. Pulls from
- * GET /auth/catalog (catalog_apps collection) and groups by kind
- * (desktop / cli / cloud / web) so the whole fleet is discoverable:
- * thay(tunes), thay(jot), (chronometer), Dabba CLI, Dabba desktop,
- * dabba-cloud & more.
+ * GET /auth/catalog (catalog_apps collection + curated fallback covering
+ * thaypley(tunes), thaypley(tv), (jot), (chronometer), (dabba) desktop/
+ * cli/cloud, thaypley(studio)) and groups by kind with the squared-edge
+ * card presentation: square icon tile, full name, tagline, description,
+ * price/status badge, download CTA.
  */
 import { h, mount } from '../utils/dom.js';
 import auth from '../sdk.js';
@@ -27,36 +28,64 @@ const KIND_LABELS = {
   web: 'cloud & web',
 };
 
+const KIND_HINTS = {
+  desktop: 'mac · windows · linux',
+  cli: 'terminal',
+  cloud: 'any browser',
+  web: 'any browser',
+};
+
+// Icon tile letter — strip stylization ((tunes) → t) for the square tile.
+function tileLetter(displayName) {
+  const cleaned = String(displayName || '').replace(/[()]/g, '');
+  return (cleaned[0] || '?').toUpperCase();
+}
+
 function appCard(app) {
   const url = pickDownloadUrl(app.downloads);
-  const downloadBtn = h('button', {
-    className: 'btn btn-primary btn-sm',
-    onClick: () => {
-      if (url) window.open(url, '_blank', 'noopener');
-    },
-    disabled: !url,
-  }, [url ? 'download' : 'coming soon']);
+  const hint = !url ? 'coming soon' : (app.isFree === false ? (app.price || 'paid') : 'free download');
 
   return h('div', { className: 'catalog-card glass-card' }, [
-    h('div', { className: 'app-card-icon', style: { width: '56px', height: '56px', fontSize: '24px', margin: '0 auto' } }, [
-      app.displayName ? app.displayName.replace(/[()]/g, '')[0].toUpperCase() : '?',
-    ]),
-    h('div', { className: 'catalog-card-name' }, [app.displayName]),
-    app.tagline ? h('p', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
-    app.description ? h('p', { className: 'catalog-card-description' }, [app.description]) : null,
-    h('div', { className: 'catalog-card-footer' }, [
-      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
-        app.isFree ? (app.kind || 'free') : (app.price || app.kind || ''),
+    h('div', { className: 'catalog-card-head' }, [
+      h('div', { className: 'app-card-icon', style: { width: '56px', height: '56px', fontSize: '24px', flexShrink: 0 } }, [
+        app.iconUrl
+          ? h('img', { src: app.iconUrl, alt: `${app.displayName} icon`, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
+          : tileLetter(app.displayName),
       ]),
-      downloadBtn,
+      h('div', { className: 'catalog-card-title' }, [
+        h('div', { className: 'catalog-card-name' }, [app.displayName]),
+        app.tagline ? h('div', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
+      ]),
     ]),
-  ].filter(Boolean));
+    app.description ? h('p', { className: 'catalog-card-description' }, [app.description]) : null,
+    h('div', { className: 'catalog-card-meta' }, [
+      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
+        app.isFree === false ? (app.price || 'paid') : 'free',
+      ]),
+      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-sub)' } }, [
+        app.kind || 'web',
+      ]),
+      h('span', { className: 'input-hint', style: { marginLeft: 'auto' } }, [
+        KIND_HINTS[app.kind] || '',
+      ]),
+    ]),
+    h('div', { className: 'catalog-card-footer' }, [
+      h('button', {
+        className: 'btn btn-primary btn-sm',
+        onClick: () => {
+          if (url) window.open(url, '_blank', 'noopener');
+        },
+        disabled: !url,
+      }, [url ? 'download' : 'coming soon']),
+    ]),
+  ]);
 }
 
 export default async function DownloadsPage(container) {
   const heading = h('div', { className: 'downloads-header' }, [
     h('h2', {}, ['downloads']),
     h('p', { className: 'subtitle' }, ['free applications & tools for every thay(portal) member']),
+    h('p', { className: 'input-hint' }, ['one account. every surface. — thaypley(tunes) · thaypley(tv) · (jot) · (chronometer) · (dabba) desktop/cli/cloud · thaypley(studio)']),
   ]);
 
   const body = h('div', { className: 'downloads-body' });

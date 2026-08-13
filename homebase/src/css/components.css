@@ -9,8 +9,9 @@
   backdrop-filter: var(--blur);
   -webkit-backdrop-filter: var(--blur);
   border: 1px solid var(--glass-hi);
+  /* Squared-edge: hard 2px micro-bevel, never a pill. */
   border-radius: var(--radius-lg);
-  box-shadow: var(--metal-shine), var(--glass-inner), 0 8px 32px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--metal-shine), var(--glass-inner), var(--shadow-md);
   padding: var(--space-xl);
   transition: all var(--duration-base) var(--ease-out);
 }
@@ -18,7 +19,7 @@
 .glass-card:hover {
   background-position: 50% 0;
   border-color: var(--vibe-dot);
-  box-shadow: var(--metal-shine), var(--glass-inner), 0 16px 48px rgba(0, 0, 0, 0.45), 0 0 20px var(--vibe-glow);
+  box-shadow: var(--metal-shine), var(--glass-inner), var(--shadow-lg), 0 0 20px var(--vibe-glow);
   transform: translateY(-2px);
 }
 
@@ -553,7 +554,7 @@
 .downloads-page {
   max-width: var(--max-width);
   margin: 0 auto;
-  padding: var(--space-2xl) var(--space-lg);
+  padding: calc(var(--navbar-height) + var(--space-xl)) var(--space-lg) var(--space-2xl);
 }
 
 .downloads-header {
@@ -574,10 +575,22 @@
 .catalog-card {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-sm);
+  align-items: stretch;
+  gap: var(--space-md);
   padding: var(--space-xl);
-  text-align: center;
+  text-align: left;
+}
+
+.catalog-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.catalog-card-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .catalog-card-name {
@@ -596,14 +609,21 @@
 .catalog-card-description {
   font-size: var(--font-size-sm);
   color: var(--vibe-sub);
+  margin-bottom: 0;
+}
+
+.catalog-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
 }
 
 .catalog-card-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: var(--space-md);
-  margin-top: var(--space-sm);
 }
 
 /* ─── Toast ────────────────────────────────────────────────────── */
@@ -920,6 +940,331 @@
   color: var(--vibe-sub);
   text-align: center;
   margin-top: 6px;
+}
+
+/* ─── Account Drawer (right panel — ported from thaypley.com) ─────── */
+
+.right-panel {
+  position: fixed;
+  top: var(--navbar-height);
+  right: -280px;
+  bottom: 0;
+  width: 260px;
+  background: var(--surface-frost);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-left: 1px solid var(--glass-hi);
+  z-index: 200;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  transition: right var(--duration-base) var(--ease-out);
+  padding: 16px 0;
+  box-shadow: var(--shadow-lg);
+}
+
+.right-panel.open {
+  right: 0;
+}
+
+.tp-platform-tabs {
+  display: flex;
+  gap: var(--space-xs);
+  padding: 12px;
+  border-bottom: 1px solid var(--frost-border);
+  margin-bottom: 4px;
+}
+
+.tp-ptab {
+  flex: 1;
+  padding: 10px 12px;
+  font-family: var(--font-display);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--vibe-sub);
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+
+.tp-ptab:hover {
+  background: var(--glass);
+  color: var(--vibe-text);
+}
+
+.tp-ptab--active {
+  color: var(--vibe-text);
+  font-weight: 700;
+  background: var(--glass);
+  border-color: var(--vibe-dot);
+  cursor: default;
+}
+
+.right-panel-header {
+  padding: 10px 16px 6px;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  color: var(--vibe-text);
+}
+
+.switch-account-section {
+  padding: 6px 16px;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vibe-sub);
+}
+
+.right-panel-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-md);
+  margin: 0 10px 4px;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+
+.right-panel-account:hover:not(.right-panel-account--active) {
+  background: var(--glass-mid);
+  border-color: var(--vibe-dot);
+}
+
+.right-panel-account--active {
+  border-color: var(--vibe-accent);
+  cursor: default;
+}
+
+.right-panel-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--vibe-primary-text);
+  overflow: hidden;
+}
+
+.right-panel-account-name {
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--vibe-text);
+}
+
+.right-panel-account-state {
+  font-size: 10px;
+  color: var(--vibe-sub);
+}
+
+.right-panel-add {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--font-size-sm);
+  color: var(--vibe-text);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.right-panel-add:hover {
+  background: var(--glass);
+}
+
+.right-panel-divider {
+  height: 1px;
+  background: var(--frost-border);
+  margin: 8px 0;
+}
+
+.right-panel-link {
+  display: flex;
+  align-items: center;
+  padding: 11px 16px;
+  font-family: var(--font-display);
+  font-size: var(--font-size-sm);
+  color: var(--vibe-text);
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+
+.right-panel-link:hover {
+  background: var(--glass);
+  color: var(--vibe-accent);
+  text-decoration: none;
+}
+
+.right-panel-link.highlight {
+  color: var(--vibe-accent);
+}
+
+.right-panel-logout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: var(--font-size-sm);
+  color: var(--danger);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.right-panel-logout:hover {
+  background: rgba(230, 57, 70, 0.08);
+}
+
+.right-panel-logout--subtle {
+  font-size: var(--font-size-xs);
+  opacity: 0.45;
+}
+
+/* ─── Settings & Billing pages ──────────────────────────────────── */
+
+.settings-page,
+.billing-page {
+  padding-top: calc(var(--navbar-height) + var(--space-xl));
+  min-height: 100vh;
+  max-width: 760px;
+  margin: 0 auto;
+  padding-left: var(--space-lg);
+  padding-right: var(--space-lg);
+  padding-bottom: var(--space-2xl);
+}
+
+.settings-body,
+.billing-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.downloads-header {
+  margin-bottom: var(--space-lg);
+}
+
+.vibe-swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-md);
+}
+
+.vibe-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md);
+  background: var(--glass);
+  border: 2px solid var(--glass-hi);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+  font-family: var(--font-display);
+  font-size: var(--font-size-xs);
+  color: var(--vibe-text);
+}
+
+.vibe-swatch:hover {
+  border-color: var(--vibe-dot);
+  transform: translateY(-1px);
+}
+
+.vibe-swatch.active {
+  border-color: var(--vibe-accent);
+  box-shadow: var(--shadow-sm);
+}
+
+.vibe-swatch-color {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--glass-hi);
+}
+
+.vibe-swatch-label {
+  text-transform: capitalize;
+}
+
+.settings-links {
+  display: flex;
+  flex-direction: column;
+}
+
+.billing-plan-name {
+  font-family: var(--font-display);
+  font-size: var(--font-size-2xl);
+  color: var(--vibe-text);
+  margin-bottom: var(--space-xs);
+}
+
+.billing-plan-blurb {
+  font-size: var(--font-size-sm);
+  color: var(--vibe-sub);
+  margin-bottom: var(--space-md);
+}
+
+.billing-feature-list {
+  list-style: square;
+  padding-left: var(--space-lg);
+  color: var(--vibe-sub);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-lg);
+}
+
+.billing-feature-list li {
+  margin-bottom: var(--space-xs);
+}
+
+.billing-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+.billing-tier-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-md);
+}
+
+.billing-tier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--glass);
+  border: 2px solid var(--glass-hi);
+  border-radius: var(--radius-md);
+  align-items: flex-start;
+}
+
+.billing-tier--current {
+  box-shadow: var(--shadow-sm);
+}
+
+.billing-tier-name {
+  font-family: var(--font-display);
+  font-size: var(--font-size-base);
+  color: var(--vibe-text);
+}
+
+.billing-tier-price {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xl);
+  color: var(--vibe-accent);
 }
 
 /* ─── Dashboard Platform Strip ─────────────────────────────────── */

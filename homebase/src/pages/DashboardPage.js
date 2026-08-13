@@ -20,27 +20,47 @@ export default async function DashboardPage(container) {
     return;
   }
 
-  function showErrorCard(subtitle) {
+  const retryTimer = { id: null };
+  function clearRetryTimer() {
+    if (retryTimer.id) {
+      clearTimeout(retryTimer.id);
+      retryTimer.id = null;
+    }
+  }
+  function showErrorCard(subtitle, code, retryAfter) {
+    clearRetryTimer();
+    const isUnavailable = code === 'PROFILE_UNAVAILABLE' || code === 'CATALOG_UNAVAILABLE' || code === 'APPS_UNAVAILABLE';
+    const cardTitle = isUnavailable ? 'thay services are warming up' : 'something broke';
+    const autoRetrySeconds = retryAfter > 0 ? retryAfter : 5;
+    if (isUnavailable) {
+      // Auto-retry: a stale PB admin session heals on the next request, so
+      // give the user a countdown instead of a dead-end manual retry.
+      retryTimer.id = setTimeout(() => location.reload(), autoRetrySeconds * 1000);
+    }
     const errorCard = h('div', { className: 'form-card', style: { textAlign: 'center' } }, [
-      h('h2', {}, ['something broke']),
-      h('p', { className: 'subtitle' }, [subtitle]),
+      h('h2', {}, [cardTitle]),
+      h('p', { className: 'subtitle' }, [
+        isUnavailable
+          ? `${subtitle} auto-retrying in ${autoRetrySeconds}s…`
+          : subtitle,
+      ]),
       h('button', {
         className: 'btn btn-primary',
         onClick: () => location.reload(),
-      }, ['retry']),
+      }, isUnavailable ? ['try now'] : ['retry']),
     ]);
     mount(container, h('div', {}, [NavBar(), h('div', { className: 'auth-page' }, [errorCard])]));
   }
 
-  // Load profile if not loaded
+  // Load profile if not loaded. Profile is load-bearing (identity); apps and
+  // devices are independent panels — a hiccup in one must never take down
+  // the whole dashboard (the prior all-or-nothing Promise.all did exactly
+  // that: a single /devices 500 rendered the full-page error card).
   let state = getState();
   if (!state.profile) {
     try {
       const profile = await auth.getProfile();
-      const apps = await auth.getApps();
-      const devices = await auth.listDevices();
-      setState({ profile, apps, devices });
-      state = getState();
+      setState({ profile });
     } catch (err) {
       console.error('Failed to load profile:', err);
       if (err.status === 401) {
@@ -52,9 +72,21 @@ export default async function DashboardPage(container) {
         return;
       }
       // Server-side failure: show a retry state instead of looping
-      showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load");
+      showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load", err.code, err.retryAfter);
       return;
     }
+
+    // Non-fatal: apps/devices load in parallel, each failing independently
+    // to an empty/relaxed panel instead of a full-page crash.
+    const [apps, devices] = await Promise.allSettled([
+      auth.getApps(),
+      auth.listDevices(),
+    ]);
+    setState({
+      apps: apps.status === 'fulfilled' ? apps.value : [],
+      devices: devices.status === 'fulfilled' ? devices.value : [],
+    });
+    state = getState();
   }
 
   const profile = state.profile;

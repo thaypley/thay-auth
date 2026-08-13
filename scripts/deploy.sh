@@ -46,6 +46,16 @@ ssh "${REMOTE}" "set -euo pipefail
     [ \"\${status}\" = 'healthy' ] && break
     sleep 10
   done
+  # Live schema sync: pb_migrations never auto-run on prod, so the
+  # devices collection (and any future schema drift) is applied
+  # idempotently here. Best-effort — a schema hiccup must not block
+  # the deploy (the API hardens these paths to 503 with a clear code).
+  if docker compose run --rm --no-deps thay-auth node scripts/sync-live-schema.mjs; then
+    echo '✓ live schema sync OK'
+  else
+    echo '⚠ live schema sync failed — check PB admin credentials / connectivity'
+  fi
+
   docker compose ps
   docker compose logs --tail=40 thay-auth || true
 "

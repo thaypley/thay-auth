@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { getAdminPb } from '../providers/pocketbase.js';
+import { getAdminPb, invalidateAdminPb } from '../providers/pocketbase.js';
 import { signDeviceToken, verifyDeviceToken, type DeviceTokenPayload } from '../providers/jwt.js';
 import { requireUser } from '../middleware/requireAuth.js';
 import { config } from '../config.js';
@@ -37,6 +37,21 @@ const deviceCache = new SharedCache<CachedDevice>({
 
 function invalidateDevice(deviceId: string): void {
   deviceCache.del(deviceId);
+}
+
+export const PAIRING_UNAVAILABLE = { error: "Device pairing is temporarily unavailable", code: "DEVICE_PAIRING_UNAVAILABLE" };
+
+/**
+ * Maps PB collection-missing (404) and transient auth
+ * infrastructure errors (401/403) to a client-actionable 503.
+ * Returns 0 when the error should surface as a real 500.
+ */
+export function pbUnavailable(err: unknown): number {
+  const status = (err as { status?: number })?.status;
+  if (status === 401 || status === 403) {
+    invalidateAdminPb();
+  }
+  return status === 404 || status === 401 || status === 403 ? 503 : 0;
 }
 
 function normalizeScopes(scopes: unknown): string[] {
@@ -129,6 +144,8 @@ router.post('/pair', requireUser, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error('pair device error:', err);
+    const unavailable = pbUnavailable(err);
+    if (unavailable) return res.status(unavailable).json(PAIRING_UNAVAILABLE);
     return res.status(500).json({ error: 'Failed to pair device' });
   }
 });
@@ -153,6 +170,8 @@ router.delete('/unpair', requireUser, async (req: Request, res: Response) => {
     return res.status(200).json({ success: true });
   } catch (err) {
     logger.error('unpair device error:', err);
+    const unavailable = pbUnavailable(err);
+    if (unavailable) return res.status(unavailable).json(PAIRING_UNAVAILABLE);
     return res.status(500).json({ error: 'Failed to unpair device' });
   }
 });
@@ -163,10 +182,31 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
     const perPage = Math.min(parseInt(req.query.per_page as string, 10) || 20, 50); // cap at 50
 
     const pb = await getAdminPb();
-    const devices = await pb.collection('devices').getList(page, perPage, {
-      filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
-      sort: '-createdAt',
-    });
+    // Resilient list: a missing `devices` collection on a fresh PB instance
+    // must read as an empty list, not a 500 that takes down the whole
+    // dashboard. PB auth failures (401/403) are transient infrastructure
+    // errors → 503, which the UI can present as "try again shortly" instead
+    // of "something broke".
+    let devices;
+    try {
+      devices = await pb.collection('devices').getList(page, perPage, {
+        filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
+        sort: '-createdAt',
+      });
+    } catch (err) {
+      const pbStatus = (err as { status?: number })?.status;
+      if (pbStatus === 404) {
+        return res.status(200).json({
+          devices: [],
+          pagination: { page, perPage, total: 0, pages: 0 },
+        });
+      }
+      if (pbStatus === 401 || pbStatus === 403) {
+        invalidateAdminPb();
+        return res.status(503).json({ error: 'Thay services are temporarily unavailable' });
+      }
+      throw err;
+    }
 
     const result = (devices as unknown as Record<string, unknown>[]).map(d => ({
       id: d.id,
@@ -284,7 +324,15 @@ router.post('/verify', async (req: Request, res: Response) => {
       // The device's REAL expiry (set at pair time from config.tokenExpiryMs).
       expiresAt: (rec.expiresAt as string) ?? null,
     });
-  } catch {
+  } catch (err) {
+    const unavailable = pbUnavailable(err);
+    if (unavailable) {
+      if ((err as { status?: number })?.status === 401 || (err as { status?: number })?.status === 403) {
+        invalidateAdminPb();
+      }
+      return res.status(unavailable).json({ valid: false, code: "DEVICE_PAIRING_UNAVAILABLE", error: "Device verification is temporarily unavailable" });
+    }
+    logger.error('verify device error:', err);
     return res.status(500).json({ valid: false, error: 'Verification failed' });
   }
 });

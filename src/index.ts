@@ -67,6 +67,9 @@ app.use(cors({
 // a multi-MB parse per request. Mounted BEFORE the default parser (body-
 // parser skips when req._body is already set, so order matters).
 app.use('/auth/avatar', express.json({ limit: '6mb' }));
+// Raw body ONLY for /auth/webhook — Stripe webhook signatures must be
+// verified against the exact bytes received.
+app.use('/auth/webhook', express.raw({ type: () => true, limit: '64kb' }));
 app.use(express.json({ limit: '64kb' }));
 
 app.use('/auth', authRouter);

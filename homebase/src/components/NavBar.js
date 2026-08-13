@@ -1,17 +1,28 @@
 /**
  * Navigation bar component.
+ *
+ * The vibe theme switcher no longer lives in the header — themes are
+ * managed from /settings (per the squared-edge redesign). In its place:
+ * an avatar tile that opens the account switcher right panel (pley/fam/werk
+ * platform tabs + multi-account management ported from thaypley.com).
  */
 import { h } from '../utils/dom.js';
-import auth, { hasToken } from '../sdk.js';
+import { hasToken } from '../sdk.js';
 import { navigate } from '../router.js';
 import { setState, getState } from '../store.js';
-import { VIBES, applyVibe, getVibeColor, loadVibe } from '../utils/vibes.js';
+import { mountAccountDrawer } from './AccountDrawer.js';
 
 export function NavBar() {
   const isLoggedIn = hasToken();
   const state = getState();
   const user = state.user || state.profile;
-  const current = loadVibe();
+
+  // Account drawer state (mounted lazily on first open).
+  let drawerMount = null;
+  let drawerOpen = false;
+  // Assigned inside the logged-in branch below; referenced by openDrawer,
+  // so it must live at NavBar function scope, not block scope.
+  let userMenu = null;
 
   const brand = h('button', { type: 'button', className: 'navbar-brand', onClick: () => navigate('/') }, ['thay']);
 
@@ -36,25 +47,49 @@ export function NavBar() {
     }, ['invites']);
   }
 
-  const vibeDots = VIBES.map((v) => h('button', {
-    type: 'button',
-    className: `vibe-dot${v === current ? ' active' : ''}`,
-    style: { background: getVibeColor(v) },
-    title: v,
-    'aria-label': `theme: ${v}`,
-    onClick: (e) => {
-      applyVibe(v);
-      e.currentTarget.parentElement.querySelectorAll('.vibe-dot').forEach((dot) => dot.classList.remove('active'));
-      e.currentTarget.classList.add('active');
-    },
-  }));
-  const vibeSwitcher = h('div', { className: 'vibe-switcher' }, vibeDots);
-
   const end = h('div', { className: 'navbar-end' });
   end.appendChild(platformsLink);
   end.appendChild(downloadsLink);
   if (invitesLink) end.appendChild(invitesLink);
-  end.appendChild(vibeSwitcher);
+
+  // Drawer helpers — created here but only reachable with userMenu defined.
+  // The drawer's onClose is the NavBar-level close; the drawer root's own
+  // `_close` re-renders it closed. A flag avoids double-closing.
+  function closeDrawer() {
+    if (!drawerOpen) return;
+    drawerOpen = false;
+    const root = drawerMount;
+    if (!root) return;
+    if (root._close) {
+      const fn = root._close;
+      root._close = null;
+      fn();
+    }
+    // Visually retract the slide-in panel (close() only unwires listeners).
+    const panel = root.querySelector('.right-panel');
+    if (panel) panel.classList.remove('open');
+    if (root._toggle) {
+      root._toggle.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function openDrawer() {
+    if (drawerOpen) {
+      closeDrawer();
+      return;
+    }
+    if (!drawerMount) {
+      drawerMount = document.createElement('div');
+      drawerMount.id = 'account-drawer-root';
+      document.body.appendChild(drawerMount);
+    }
+    drawerOpen = true;
+    mountAccountDrawer(drawerMount, { open: true, onClose: closeDrawer });
+    if (drawerMount && userMenu) {
+      drawerMount._toggle = userMenu;
+      userMenu.setAttribute('aria-expanded', 'true');
+    }
+  }
 
   if (isLoggedIn && user) {
     const avatar = user.avatar
@@ -75,24 +110,18 @@ export function NavBar() {
 
     const username = h('span', { className: 'navbar-username' }, [`@${user.username || 'you'}`]);
 
-    const userMenu = h('button', {
+    // The avatar tile opens the ACCOUNT SWITCHER (pley/fam/werk + account
+    // management) instead of a plain profile link, matching thaypley.com.
+    userMenu = h('button', {
       type: 'button',
       className: 'navbar-user',
-      onClick: () => navigate('/profile'),
-      'aria-label': 'go to your profile',
+      onClick: openDrawer,
+      'aria-label': 'open account switcher',
+      'aria-haspopup': 'dialog',
+      'aria-expanded': 'false',
     }, [avatar, username]);
 
-    const logoutBtn = h('button', {
-      className: 'btn btn-ghost btn-sm',
-      onClick: async () => {
-        await auth.logout();
-        setState({ user: null, profile: null, apps: [], devices: [] });
-        navigate('/login', true);
-      },
-    }, ['log out']);
-
     end.appendChild(userMenu);
-    end.appendChild(logoutBtn);
   } else {
     const loginBtn = h('button', {
       className: 'btn btn-ghost btn-sm',
@@ -109,10 +138,4 @@ export function NavBar() {
   }
 
   return h('nav', { className: 'navbar' }, [brand, end]);
-}
-
-export function AppShell(pageContent) {
-  const nav = NavBar();
-  const main = h('main', {}, [pageContent]);
-  return h('div', {}, [nav, main]);
 }

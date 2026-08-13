@@ -30,9 +30,14 @@ export default async function InvitesPage(container) {
       // Persist to the store so NavBar's architect-gated invites
       // link appears immediately, even on a hard refresh of /invites.
       setState({ user: { ...(state.user || {}), ...profile }, profile });
-    } catch {
-      navigate('/', true);
-      return;
+    } catch (err) {
+      if (err.status === 401) {
+        const { clearToken } = await import('../sdk.js');
+        clearToken();
+      }
+      // Transient failure: render the page anyway — loadInvites() will
+      // surface a retry/architect card instead of a silent bounce.
+      isArchitect = false;
     }
   }
   if (!isArchitect) {
@@ -53,6 +58,22 @@ export default async function InvitesPage(container) {
       invites = await auth.listInvites();
     } catch (err) {
       console.error('Failed to load invites:', err);
+      if (err.status === 403) {
+        // The account no longer has architect access (or the token was
+        // minted before the flag landed) — a role issue, not an outage.
+        listEl.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center' } }, [
+          h('h3', {}, ['architect access required']),
+          h('p', { className: 'input-hint-error' }, ['invite minting is reserved for thay architects.']),
+          h('button', { className: 'btn btn-primary btn-sm', onClick: () => navigate('/') }, ['back to dashboard']),
+        ]));
+        return;
+      }
+      if (err.status === 401) {
+        const { clearToken } = await import('../sdk.js');
+        clearToken();
+        navigate('/login', true);
+        return;
+      }
       listEl.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center' } }, [
         h('h3', {}, ['something broke']),
         h('p', { className: 'input-hint-error' }, ['could not load invites — try again shortly.']),

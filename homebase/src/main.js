@@ -26,6 +26,8 @@ const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage.js'));
 const PlatformsPage = lazy(() => import('./pages/PlatformsPage.js'));
 const InvitesPage = lazy(() => import('./pages/InvitesPage.js'));
+const BillingPage = lazy(() => import('./pages/BillingPage.js'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage.js'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.js'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
@@ -106,6 +108,26 @@ route('/platforms', async (container) => {
 // Architect-only invite minting (backend-enforced).
 route('/invites', async (container) => {
   await InvitesPage(container);
+});
+
+// Billing & subscriptions (thay-sub future).
+route('/billing', async (container) => {
+  if (!hasToken()) {
+    const { navigate } = await import('./router.js');
+    navigate('/login', true);
+    return;
+  }
+  await BillingPage(container);
+});
+
+// Settings — vibe themes + account management.
+route('/settings', async (container) => {
+  if (!hasToken()) {
+    const { navigate } = await import('./router.js');
+    navigate('/login', true);
+    return;
+  }
+  await SettingsPage(container);
 });
 
 route('/404', async (container) => {

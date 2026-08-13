@@ -152,8 +152,48 @@ function hasField(collection, fieldName) {
   return collection.fields.some((f) => f.name === fieldName);
 }
 
+async function ensureDevicesCollection(pb) {
+  try {
+    await pb.collections.getOne('devices');
+    console.log('✓ devices collection already exists — nothing to do');
+    return;
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
+  const users = await pb.collections.getOne('users');
+  await pb.collections.create({
+    name: 'devices',
+    type: 'base',
+    listRule: 'userId = @request.auth.id',
+    viewRule: 'userId = @request.auth.id',
+    createRule: 'userId = @request.auth.id',
+    updateRule: 'userId = @request.auth.id',
+    deleteRule: 'userId = @request.auth.id',
+    fields: [
+      { name: 'userId', type: 'relation', required: true, maxSelect: 1, collectionId: users.id },
+      { name: 'tokenHash', type: 'text', required: true },
+      { name: 'label', type: 'text', required: true, max: 100 },
+      { name: 'scopes', type: 'json', required: false },
+      { name: 'lastSeenAt', type: 'date', required: false },
+      { name: 'expiresAt', type: 'date', required: false },
+      { name: 'revoked', type: 'bool', required: false },
+    ],
+    indexes: ['CREATE INDEX idx_devices_user ON devices (userId)'],
+  });
+  console.log('→ created devices collection');
+}
+
 async function ensureField(pb, collectionName, field, label) {
-  const collection = await pb.collections.getOne(collectionName);
+  let collection;
+  try {
+    collection = await pb.collections.getOne(collectionName);
+  } catch (e) {
+    if (e.status === 404) {
+      console.log(`⚠ ${collectionName} collection missing — skipping ${label}`);
+      return;
+    }
+    throw e;
+  }
   if (hasField(collection, field.name)) {
     console.log(`✓ ${label} already exists — nothing to do`);
     return;
@@ -166,9 +206,18 @@ async function upsertCatalog(pb) {
   for (const app of CATALOG_APPS) {
     const kind = classifyKind(app);
     const payload = { ...app, kind };
-    const existing = await pb.collection('catalog_apps').getList(1, 1, {
+    let existing;
+  try {
+    existing = await pb.collection('catalog_apps').getList(1, 1, {
       filter: `slug="${app.slug}"`,
     });
+    } catch (e) {
+      if (e.status === 404) {
+        console.log('⚠ catalog_apps collection missing — skipping catalog roster');
+        return;
+      }
+      throw e;
+    }
     if (existing.items.length > 0) {
       const rec = existing.items[0];
       const updates = {};
@@ -195,6 +244,8 @@ async function main() {
   const pb = new PocketBase(PB_URL);
   await pb.admins.authWithPassword(ADMIN_EMAIL, ADMIN_PASSWORD);
   console.log('Authenticated as admin.\n');
+
+  await ensureDevicesCollection(pb);
 
   await ensureField(pb, 'users', { name: 'avatarVersion', type: 'number', required: false, min: 0, max: 999999 }, 'users.avatarVersion');
   await ensureField(pb, 'user_apps', { name: 'syncUrl', type: 'text', required: false, max: 500 }, 'user_apps.syncUrl');

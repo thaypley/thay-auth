@@ -45,7 +45,7 @@ export default async function ProfilePage(container) {
   // Avatar
   let avatarFile = null;
   const avatarPreview = profile.avatar
-    ? h('div', { style: { width: '72px', height: '72px', margin: '0 auto', borderRadius: '50%', overflow: 'hidden' } }, [
+    ? h('div', { style: { width: '72px', height: '72px', margin: '0 auto', borderRadius: '0px', overflow: 'hidden', border: '2px solid var(--vibe-dot)' } }, [
       h('img', { src: profile.avatar, alt: `${profile.username || 'your'} avatar`, style: { width: '100%', height: '100%', objectFit: 'cover' } }),
     ])
     : h('div', {
@@ -74,7 +74,7 @@ export default async function ProfilePage(container) {
     avatarHint.textContent = file.name;
     const url = URL.createObjectURL(file);
     avatarPreview.textContent = '';
-    avatarPreview.style.borderRadius = '50%';
+    avatarPreview.style.borderRadius = '0px';
     avatarPreview.style.overflow = 'hidden';
     avatarPreview.appendChild(h('img', {
       src: url, alt: '',

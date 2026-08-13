@@ -1,16 +1,28 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { createClient, getAdminPb } from '../providers/pocketbase.js';
+import {
+  createClient,
+  getAdminPb,
+  invalidateAdminPb,
+  verifyUserToken as verifyPbUserToken,
+} from '../providers/pocketbase.js';
 import {
   createUserDirect,
   userExistsDirect,
   redeemInviteDirect,
   DuplicateFieldError,
 } from '../providers/directSqlUsers.js';
-import { signUserToken } from '../providers/jwt.js';
+import { signUserToken, verifyUserToken as verifyWrappedUserToken } from '../providers/jwt.js';
 import { requireUser, requireArchitect, markSessionRevoked } from '../middleware/requireAuth.js';
 import { OFFICIAL_PLATFORMS } from '../utils/platforms.js';
 import { config } from '../config.js';
+import {
+  billingConfigured,
+  createCheckoutSession,
+  createPortalSession,
+  cancelSubscription,
+  verifyWebhook,
+} from '../providers/billing.js';
 import { logger } from '../utils/logger.js';
 import { metrics } from '../utils/metrics.js';
 import { rateLimit } from '../utils/rateLimit.js';
@@ -51,6 +63,22 @@ async function safeList(
     }
     throw err;
   }
+}
+
+/**
+ * Maps PB admin-read failures to a client-actionable status.
+ * 401/403 = stale admin session -> force re-auth on next request (503).
+ * 404 = collection/user missing -> 503 so the client treats it as
+ * infrastructure, not a broken endpoint.
+ * Any other error stays a real 500.
+ */
+function pbErrorStatus(err: unknown): number {
+  const status = (err as { status?: number })?.status;
+  if (status === 401 || status === 403 || status === 404) {
+    invalidateAdminPb();
+    return 503;
+  }
+  return 500;
 }
 
 function generateCode(): string {
@@ -197,9 +225,131 @@ async function fetchCatalog(pb: Awaited<ReturnType<typeof getAdminPb>>): Promise
       downloads: rec.downloads || {},
     };
   });
+  // A curated fallback so the downloads page is never empty even when the
+  // catalog_apps collection is missing/unseeded on a fresh PB instance.
+  if (mapped.length === 0) {
+    mapped.push(...FALLBACK_CATALOG);
+  }
   catalogCache = { apps: mapped, fetchedAt: Date.now() };
   return mapped;
 }
+
+// ── Curated fleet catalog (fallback + UI source of truth) ──────────────
+// The asked-for surface: thaypley(tunes), thaypley(tv), (jot),
+// (chronometer), (dabba) desktop/cli/cloud, thaypley(studio). These entries
+// are ALSO what the downloads page consumes when the PB collection has
+// not been seeded yet.
+interface CatalogEntry {
+  slug: string;
+  displayName: string;
+  tagline: string;
+  description: string;
+  iconUrl: string;
+  isFree: boolean;
+  price: string;
+  version: string;
+  kind: string;
+  downloads: Record<string, string>;
+}
+
+const FALLBACK_CATALOG: CatalogEntry[] = [
+  {
+    slug: 'thaypley-tunes',
+    displayName: 'thaypley(tunes)',
+    tagline: 'the whole world\'s music, curated for creators',
+    description: 'stream, queue, and share across every device — deep artist mode, unlimited skips, and studio-grade output.',
+    iconUrl: '',
+    isFree: false,
+    price: '$6/mo',
+    version: '1.0.0',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'thaypley-tv',
+    displayName: 'thaypley(tv)',
+    tagline: 'television for the multiverse',
+    description: 'watch parties, ambient channels, and creator-first originals — the living room side of thaypley.',
+    iconUrl: '',
+    isFree: false,
+    price: '$6/mo',
+    version: '0.9.0',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'thay-jot',
+    displayName: '(jot)',
+    tagline: 'thoughts, captured at light speed',
+    description: 'the note surface of the thay universe — markdown, sync, and collaborative linking across every app.',
+    iconUrl: '',
+    isFree: true,
+    price: 'free',
+    version: '2.3.1',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'chronometer',
+    displayName: '(chronometer)',
+    tagline: 'time, but make it thay',
+    description: 'the clock, timer, and world-time surface for the thay universe — built on the retro-LCD standard.',
+    iconUrl: '',
+    isFree: true,
+    price: 'free',
+    version: '1.4.0',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'dabba-desktop',
+    displayName: '(dabba) — desktop',
+    tagline: 'your local studio dock',
+    description: 'unified desktop launcher for every thaypley service.',
+    iconUrl: '',
+    isFree: true,
+    price: 'free',
+    version: '0.6.2',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'dabba-cli',
+    displayName: '(dabba) — cli',
+    tagline: 'the whole fleet in your terminal',
+    description: 'auth, deploy, and orchestrate from anywhere.',
+    iconUrl: '',
+    isFree: true,
+    price: 'free',
+    version: '0.6.2',
+    kind: 'cli',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+  {
+    slug: 'dabba-cloud',
+    displayName: '(dabba) — cloud',
+    tagline: 'your services, running everywhere',
+    description: 'managed cloud for the thay universe.',
+    iconUrl: '',
+    isFree: false,
+    price: '$3/mo',
+    version: '0.6.2',
+    kind: 'cloud',
+    downloads: { web: '' },
+  },
+  {
+    slug: 'thaypley-studio',
+    displayName: 'thaypley(studio)',
+    tagline: 'create the whole universe',
+    description: 'the creator engine — music, video, design, and publishing in one studio-grade surface.',
+    iconUrl: '',
+    isFree: false,
+    price: '$12/mo',
+    version: '1.0.0',
+    kind: 'desktop',
+    downloads: { mac: '', windows: '', linux: '' },
+  },
+];
 
 async function getCatalogApps(pb: Awaited<ReturnType<typeof getAdminPb>>): Promise<unknown[]> {
   const now = Date.now();
@@ -575,7 +725,11 @@ router.get('/me', requireUser, async (req: Request, res: Response) => {
     return res.status(200).json(sanitizeUser(user, req.user?.email || ''));
   } catch (err) {
     logger.error('/me error:', err);
-    return res.status(500).json({ error: 'Failed to fetch user' });
+    const status = pbErrorStatus(err);
+    return res.status(status).json({
+      error: 'Failed to fetch user',
+      ...(status === 503 ? { code: 'PROFILE_UNAVAILABLE', retryAfter: 5 } : {}),
+    });
   }
 });
 
@@ -849,7 +1003,11 @@ router.get('/profile', requireUser, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error('/profile GET error:', err);
-    return res.status(500).json({ error: 'Failed to fetch profile' });
+    const status = pbErrorStatus(err);
+    return res.status(status).json({
+      error: 'Failed to fetch profile',
+      ...(status === 503 ? { code: 'PROFILE_UNAVAILABLE', retryAfter: 5 } : {}),
+    });
   }
 });
 
@@ -929,7 +1087,11 @@ router.get('/profile/characteristics', requireUser, async (req: Request, res: Re
     return res.status(200).json({ characteristics: chars });
   } catch (err) {
     logger.error('/profile/characteristics GET error:', err);
-    return res.status(500).json({ error: 'Failed to fetch characteristics' });
+    const status = pbErrorStatus(err);
+    return res.status(status).json({
+      error: 'Failed to fetch characteristics',
+      ...(status === 503 ? { code: 'PROFILE_UNAVAILABLE', retryAfter: 5 } : {}),
+    });
   }
 });
 
@@ -995,7 +1157,345 @@ router.get('/catalog', async (_req: Request, res: Response) => {
     return res.status(200).json({ apps });
   } catch (err) {
     logger.error('/catalog GET error:', err);
-    return res.status(500).json({ error: 'Failed to fetch catalog' });
+    const status = pbErrorStatus(err);
+    return res.status(status).json({
+      error: 'Failed to fetch catalog',
+      ...(status === 503 ? { code: 'CATALOG_UNAVAILABLE', retryAfter: 5 } : {}),
+    });
+  }
+});
+
+// ─── Subscriptions & Billing (thay-sub) ─────────────────────────────
+// Exposes the future thay-subscription surface: the account's current
+// thay-sub tier (from the users.tier field), plus the per-app purchase
+// status derived from the public catalog. Real payment-provider wiring
+// (Stripe/Paddle checkout, webhooks, entitlements) lands behind this
+// contract, so clients never need to change.
+
+const SUBSCRIPTION_TIERS = ['free', 'core', 'plus', 'pro', 'enterprise'] as const;
+type SubscriptionTier = typeof SUBSCRIPTION_TIERS[number];
+
+export const SUBSCRIPTION_PLANS: Array<{
+  id: SubscriptionTier;
+  name: string;
+  monthly: number;
+  blurb: string;
+  features: string[];
+}> = [
+  {
+    id: 'free',
+    name: 'thay free',
+    monthly: 0,
+    blurb: 'every core surface, one identity',
+    features: ['thaypley(portal) access', '1 device', 'community support'],
+  },
+  {
+    id: 'core',
+    name: 'thay core',
+    monthly: 6,
+    blurb: 'the everyday creator tier',
+    features: ['everything in free', 'all streaming apps', '5 devices', 'priority support'],
+  },
+  {
+    id: 'plus',
+    name: 'thay plus',
+    monthly: 12,
+    blurb: 'for serious makers',
+    features: ['everything in core', 'thaypley(studio)', '10 devices', 'sync across all surfaces'],
+  },
+  {
+    id: 'pro',
+    name: 'thay pro',
+    monthly: 24,
+    blurb: 'the full creator stack',
+    features: ['everything in plus', 'unlimited devices', 'early features', 'direct line to the studio'],
+  },
+  {
+    id: 'enterprise',
+    name: 'thay enterprise',
+    monthly: -1,
+    blurb: 'custom fleet & governance',
+    features: ['everything in pro', 'SSO/SAML', 'dedicated support'],
+  },
+];
+
+router.get('/subscription', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+
+    const rawTier = (user.tier as string) || 'free';
+    const tier = SUBSCRIPTION_TIERS.includes(rawTier as SubscriptionTier) ? rawTier as SubscriptionTier : 'free';
+    const plan = SUBSCRIPTION_PLANS.find((p) => p.id === tier) || SUBSCRIPTION_PLANS[0];
+
+    // App purchases from the public catalog + the user's entitlement map.
+    // A user's `app_entitlements` field is a JSON string map:
+    //   { [slug]: 'owned' | 'subscribed' | 'trial' }
+    const catalog = await getCatalogApps(pb);
+    let entitlements: Record<string, string> = {};
+    try {
+      entitlements = (user.app_entitlements && JSON.parse(user.app_entitlements as string)) || {};
+    } catch {
+      /* malformed entitlements — treat as empty */
+    }
+    const purchases = catalog
+      .filter((a: unknown) => (a as { isFree?: boolean }).isFree === false)
+      .map((a: unknown) => {
+        const rec = a as { slug: string; displayName: string; price: string };
+        return {
+          slug: rec.slug,
+          appName: rec.displayName,
+          price: (rec.price === '0' || rec.price === '') ? 'one-time' : (rec.price || 'one-time'),
+          owned: entitlements[rec.slug] === 'owned' || entitlements[rec.slug] === 'subscribed',
+          status: entitlements[rec.slug] || 'none',
+        };
+      });
+
+    // Portal is driven by POST /auth/subscription/portal (creates a live
+    // Stripe billing-portal session when configured) — never a stale GET link.
+    const manageUrl = '';
+
+    return res.status(200).json({
+      tier,
+      plan: {
+        id: plan.id,
+        name: plan.name,
+        monthly: plan.monthly,
+        blurb: plan.blurb,
+        features: plan.features,
+      },
+      purchases,
+      // Real checkout/portal URLs now: created lazily by the UI via
+      // POST /auth/subscription/checkout + /portal (no keys = mock mode).
+      checkoutUrl: '',
+      manageUrl,
+      billingEnabled: billingConfigured(),
+    });
+  } catch (err) {
+    logger.error('/subscription GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch subscription' });
+  }
+});
+
+router.post('/subscription/checkout', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+    const targetTier = String((req.body as { tier?: string })?.tier || '').toLowerCase();
+    if (!SUBSCRIPTION_TIERS.includes(targetTier as SubscriptionTier)) {
+      return res.status(400).json({ error: 'Invalid tier' });
+    }
+    if (targetTier === 'free') {
+      return res.status(400).json({ error: 'Free tier has no checkout' });
+    }
+    const email = (user.email as string) || '';
+    const result = await createCheckoutSession({
+      userId,
+      email,
+      tier: targetTier,
+      successUrl: `${config.appBaseUrl}/#/billing?checkout=success&tier=${targetTier}`,
+      cancelUrl: `${config.appBaseUrl}/#/billing?checkout=cancelled`,
+    });
+    // Remember the pending upgrade so the webhook can reconcile it even
+    // if the client navigates away mid-checkout.
+    await pb.collection('users').update(userId, {
+      pending_tier: targetTier,
+      pending_session: result.sessionId,
+    }).catch(() => undefined);
+    invalidateUserCache(userId);
+    return res.status(200).json({ url: result.url, mode: result.mode, sessionId: result.sessionId });
+  } catch (err) {
+    logger.error('/subscription/checkout POST error:', err);
+    return res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+router.post('/subscription/portal', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+    const customerId = (user.stripe_customer_id as string) || '';
+    if (!customerId) {
+      return res.status(404).json({ error: 'No billing customer yet' });
+    }
+    const result = await createPortalSession({
+      customerId,
+      returnUrl: `${config.appBaseUrl}/#/billing`,
+    });
+    return res.status(200).json({ url: result.url, mode: result.mode });
+  } catch (err) {
+    logger.error('/subscription/portal POST error:', err);
+    return res.status(500).json({ error: 'Failed to create portal session' });
+  }
+});
+
+router.post('/subscription/cancel', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+    const stripeSubId = (user.stripe_subscription_id as string) || '';
+    if (user.tier === 'free' && !stripeSubId) {
+      return res.status(400).json({ error: 'No subscription to cancel' });
+    }
+    if (stripeSubId) {
+      await cancelSubscription(stripeSubId);
+    }
+    // Local downgrade: free immediately, entitlements cleared.
+    await pb.collection('users').update(userId, {
+      tier: 'free',
+      stripe_subscription_id: '',
+      app_entitlements: '{}',
+    }).catch(() => undefined);
+    invalidateUserCache(userId);
+    return res.status(200).json({ ok: true, tier: 'free' });
+  } catch (err) {
+    logger.error('/subscription/cancel POST error:', err);
+    return res.status(500).json({ error: 'Failed to cancel subscription' });
+  }
+});
+
+// Stripe webhook — raw body (mounted before express.json in index.ts).
+// Reconciles checkout completion / subscription lifecycle / entitlement
+// grants without the client in the loop.
+router.post('/webhook', async (req: Request, res: Response) => {
+  try {
+    // express.raw() mounted on /auth/webhook puts the exact bytes in req.body.
+    const raw = Buffer.isBuffer((req as unknown as { body?: unknown }).body) ? (req.body as Buffer) : Buffer.from('');
+    if (!raw.length) return res.status(400).json({ error: 'Empty webhook body' });
+    const signature = String(req.headers['stripe-signature'] || '');
+    const events = await verifyWebhook(raw, signature);
+    for (const ev of events as Array<{ type?: string; data?: { object?: Record<string, unknown> } }>) {
+      const type = String(ev.type || '');
+      const data = (ev.data?.object || {}) as Record<string, any>;
+      const userId = String(data.client_reference_id || '')
+        || String(data.metadata?.userId || '')
+        || String(data.customer_metadata?.userId || '');
+      if (!userId) continue;
+      const pb = await getAdminPb();
+      let user: Record<string, unknown>;
+      try {
+        user = await getUserData(pb, userId);
+      } catch {
+        logger.warn('Webhook referenced unknown user', { userId });
+        continue;
+      }
+      if (type === 'checkout.session.completed' || type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
+        const tier = String(data.metadata?.tier || user.pending_tier || 'pro');
+        const subId = String(data.subscription || data.id || user.stripe_subscription_id || '');
+        const customerId = String(data.customer || user.stripe_customer_id || '');
+        const finalTier = SUBSCRIPTION_TIERS.includes(tier as SubscriptionTier) ? tier as SubscriptionTier : 'pro';
+        await pb.collection('users').update(userId, {
+          tier: finalTier,
+          stripe_customer_id: customerId,
+          stripe_subscription_id: subId,
+          pending_tier: '',
+          pending_session: '',
+        }).catch(() => undefined);
+        invalidateUserCache(userId);
+        logger.info('Webhook granted tier', { userId, tier: finalTier });
+      } else if (type === 'checkout.session.expired') {
+        await pb.collection('users').update(userId, { pending_tier: '', pending_session: '' }).catch(() => undefined);
+        invalidateUserCache(userId);
+      }
+    }
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    logger.error('/webhook POST error:', err);
+    return res.status(400).json({ error: 'Webhook signature invalid or event malformed' });
+  }
+});
+
+// ─── Platform Relay (account switcher) ─────────────────────────────
+// The right-panel (pley/fam/werk) switcher posts the current thay-auth
+// session token here BEFORE navigating to the target subdomain. Best
+// effort: if the token is valid we set a shared cookie for the relay
+// partner, and the client navigates regardless — the other subdomain
+// re-authenticates with its own thay-auth client if the cookie is absent.
+router.post('/relay', async (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'Missing token' });
+  }
+  try {
+    const wrapped = verifyWrappedUserToken(token);
+    if (!wrapped || !wrapped.pbToken) {
+      return res.status(401).json({ ok: false, error: 'Invalid token' });
+    }
+    // Hand the inner PB token to whichever thaypley subdomain the account
+    // switcher is about to navigate to. Short-lived + SameSite=Lax: the
+    // destination app's thay-auth client can read this to warm the session;
+    // it expires in minutes, so it's never a standing credential.
+    const pbToken = wrapped.pbToken;
+    res.setHeader(
+      'Set-Cookie',
+      `thay_auth_relay=${pbToken}; Path=/; Domain=.thaypley.com; SameSite=Lax; Secure; Max-Age=900`,
+    );
+    return res.status(200).json({ ok: true, user: { id: wrapped.sub } });
+  } catch (err) {
+    logger.error('/relay error:', err);
+    return res.status(503).json({ ok: false, error: 'Relay temporarily unavailable' });
+  }
+});
+
+// ─── Relay consumption (thaypley.com / fam / werk side) ────────────
+// The destination subdomain calls this with the `thay_auth_relay` cookie
+// (set by /relay just before the account switcher navigates). thay-auth
+// verifies the inner PB token, mints a FRESH wrapped thay-auth token for
+// the requesting app, and clears the cookie. The app then stores the new
+// session token as if the platform had logged in itself.
+//
+// The cookie is on Domain=.thaypley.com so every sibling subdomain can
+// consume it; SameSite=Lax keeps it to top-level navigations only.
+router.post('/consume-relay', async (req: Request, res: Response) => {
+  const relay = String((req.headers.cookie || '').match(/(?:^|;\s*)thay_auth_relay=([^;]+)/)?.[1] || '');
+  if (!relay) {
+    return res.status(404).json({ ok: false, error: 'No relay cookie' });
+  }
+  try {
+    const verified = await verifyPbUserToken(relay);
+    if (!verified) {
+      // Stripe-documented cookie-delete: must reproduce the Secure flag of
+      // the cookie it clears, or browsers drop the deletion.
+      res.setHeader('Set-Cookie', 'thay_auth_relay=; Path=/; Domain=.thaypley.com; Max-Age=0; Secure');
+      return res.status(401).json({ ok: false, error: 'Relay token invalid or expired' });
+    }
+
+    // Which app is consuming? The requesting subdomain or an explicit aud
+    // in the body. normalizeApp defaults unknown values to 'homebase'.
+    const requestedAud = String((req.body as { aud?: unknown })?.aud || '');
+    const aud = normalizeApp(requestedAud);
+
+    const fresh = signUserToken(verified.user.id, aud, relay);
+
+    // Clear the one-time relay cookie (Secure echoed back; see above).
+    res.setHeader('Set-Cookie', 'thay_auth_relay=; Path=/; Domain=.thaypley.com; Max-Age=0; Secure');
+    return res.status(200).json({
+      ok: true,
+      app: aud,
+      // pbToken: the raw PB session for legacy siblings whose own backend
+      // verifies against PocketBase directly (thaypley.com stores this as
+      // its tp_token).
+      pbToken: relay,
+      user: {
+        id: verified.user.id,
+        username: verified.user.username,
+        email: verified.user.email,
+        accountType: verified.user.accountType,
+        isArchitect: verified.user.isArchitect,
+        tier: verified.user.tier,
+        avatar: verified.user.avatar,
+      },
+      token: fresh,
+      expiresIn: Math.floor(config.tokenExpiryMs / 1000),
+    });
+  } catch (err) {
+    logger.error('/consume-relay error:', err);
+    return res.status(503).json({ ok: false, error: 'Relay consumption temporarily unavailable' });
   }
 });
 
@@ -1027,7 +1527,11 @@ router.get('/apps', requireUser, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error('/apps GET error:', err);
-    return res.status(500).json({ error: 'Failed to fetch apps' });
+    const status = pbErrorStatus(err);
+    return res.status(status).json({
+      error: 'Failed to fetch apps',
+      ...(status === 503 ? { code: 'APPS_UNAVAILABLE', retryAfter: 5 } : {}),
+    });
   }
 });
 

@@ -1,6 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { normalizeApp, KNOWN_APPS } from '../utils/apps.js';
 
+describe('KNOWN_APPS', () => {
+  it('includes the full thay-auth fleet (tunes, tv, jot, chronometer, dabba, studio)', () => {
+    expect(KNOWN_APPS).toEqual(expect.arrayContaining([
+      'homebase', 'tunes', 'tv', 'studio', 'jot', 'chronometer', 'dabba',
+    ]));
+  });
+});
+
 describe('normalizeApp', () => {
   it('returns known app slugs as-is', () => {
     for (const app of KNOWN_APPS) {

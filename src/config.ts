@@ -41,6 +41,7 @@ export const config = {
     process.env.CORS_ORIGINS ||
     'http://localhost:5173,http://localhost:3749,' +
     'http://localhost:1420,http://127.0.0.1:1420,' +
+    'https://thaypley.com,https://fam.thaypley.com,https://werk.thaypley.com,' +
     'tauri://localhost,http://tauri.localhost'
   ).split(','),
 
@@ -68,6 +69,18 @@ export const config = {
   // Public base of the PocketBase instance, used to build browser-reachable
   // file URLs (avatars). The internal pbUrl is host-local only.
   pbPublicUrl: (process.env.PB_PUBLIC_URL || 'https://thaypley.com').replace(/\/+$/, ''),
+
+  // Public base of this thay-auth deployment (the browser-reachable origin).
+  appBaseUrl: (process.env.APP_BASE_URL || 'http://localhost:3749').replace(/\/+$/, ''),
+
+  // Stripe billing (native-fetch). Empty keys = mock mode: checkout/portal
+  // return deterministic fake sessions so dev + tests exercise the full
+  // contract without payment credentials.
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
 
   // Token expiry — 30 days per segment. THE single source of truth for
   // session AND device token lifetimes.
@@ -103,6 +116,11 @@ export const config = {
    *     until the revocation cache TTL (60s) refreshes. Set
    *     REVOCATION_FAIL_POLICY=open when PB uptime is the priority.
    */
+  // Health probe: if the cached admin PB auth is older than this,
+  // /auth/health reports the upstream as stale (degraded) so Docker's
+  // healthcheck can flip the container unhealthy.
+  pbStaleMs: intEnv('PB_STALE_MS', 60_000),
+
   revocationFailPolicy: process.env.REVOCATION_FAIL_POLICY === 'open' ? 'open' : 'closed',
 
   // Public catalog (no auth) — L1 stale-while-revalidate cache.

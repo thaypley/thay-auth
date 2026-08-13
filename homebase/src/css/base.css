@@ -62,7 +62,8 @@ a:hover {
   color: var(--vibe-dot);
 }
 
-/* Focus — cosmic glow ring */
+/* Focus — squared hard ring. The 0px radius keeps the outline crisp
+   against the squared-edge standard; the glow stays for visibility. */
 :focus-visible {
   outline: 2px solid var(--vibe-dot);
   outline-offset: 2px;
@@ -70,7 +71,8 @@ a:hover {
   box-shadow: 0 0 12px var(--vibe-glow);
 }
 
-/* Scrollbar — lunar glass */
+/* Scrollbar — squared lunar glass. Thumbs are 2px-bevel max per the
+   squared-edge standard (never rounded). */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -82,7 +84,7 @@ a:hover {
 
 ::-webkit-scrollbar-thumb {
   background: rgba(180, 126, 255, 0.3);
-  border-radius: var(--radius-full);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {

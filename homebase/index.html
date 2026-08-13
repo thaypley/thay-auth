@@ -7,15 +7,16 @@
   <meta name="description" content="thay — your home base for all thay-applications" />
   <title>thay — home base</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-  <!-- --font-body / --font-mono in tokens.css reference DM Sans / Space Mono
-       but nothing ever loaded them — body text and mono UI elements were
-       silently falling back to system fonts. Load both here. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <!-- --font-body / --font-mono in tokens.css reference DM Sans / Space Mono.
+       Self-hosted (no third-party request, no ERR_BLOCKED_BY_CLIENT, no FOUT). -->
   <style>
     /* ─── Critical inline CSS so page isn't blank while fonts/JS load ─── */
     @font-face{font-family:'STALPH';src:url('/assets/fonts/STALPH.ttf') format('truetype');font-display:swap}
+    @font-face{font-family:'DM Sans';src:url('/assets/fonts/dm-sans-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:'DM Sans';src:url('/assets/fonts/dm-sans-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+    @font-face{font-family:'DM Sans';src:url('/assets/fonts/dm-sans-700.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
+    @font-face{font-family:'Space Mono';src:url('/assets/fonts/space-mono-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+    @font-face{font-family:'Space Mono';src:url('/assets/fonts/space-mono-700.woff2') format('woff2');font-weight:700;font-style:normal;font-display:swap}
     *{margin:0;padding:0;box-sizing:border-box}
     /* FOUC-safe day-sky fallback — the clock-driven sky (src/utils/sky.js)
        takes over with the same 5-phase gradients the moment JS mounts. */
@@ -23,7 +24,7 @@
     #app{position:relative;z-index:1}
     .loading-page{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;text-align:center}
     .loading-logo{font-family:'STALPH','Space Mono',monospace;font-size:2.5rem;color:#231F20;letter-spacing:.05em}
-    .loading-spinner{width:24px;height:24px;border:2.5px solid rgba(35,31,32,.25);border-top-color:#231F20;border-radius:50%;animation:spin .6s linear infinite}
+    .loading-spinner{width:24px;height:24px;border:2.5px solid rgba(35,31,32,.25);border-top-color:#231F20;border-radius:0;animation:spin .6s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
   </style>
 </head>

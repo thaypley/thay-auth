@@ -245,7 +245,7 @@ export default async function SignupPage(container) {
       avatarPreview.textContent = '';
       avatarPreview.appendChild(h('img', {
         src: url, alt: '',
-        style: { width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' },
+        style: { width: '100%', height: '100%', objectFit: 'cover', borderRadius: '0px' },
       }));
     }
 

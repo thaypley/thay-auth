@@ -78,6 +78,20 @@ export async function getAdminPb(): Promise<PocketBase> {
   return authPromise;
 }
 
+/**
+ * Force-gates the pooled admin client so the next getAdminPb() call
+ * re-authenticates. Call when an admin-backed read returns 401/403
+ * (stale session after PB restart / credential rotation). Without this
+ * the degraded client would keep serving its stale token until the
+ * 25-minute AUTH_REFRESH_MS window elapses.
+ */
+export function invalidateAdminPb(): void {
+  adminPb = null;
+  lastAuthAt = 0;
+  lastAuthFailureAt = 0;
+  authPromise = null;
+}
+
 // ── Shared verification client ─────────────────────────────────────
 // One pooled client for authRefresh calls (auto-cancellation disabled).
 // Safe under concurrency because the SDK reads authStore.token

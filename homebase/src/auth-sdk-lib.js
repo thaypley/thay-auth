@@ -44,6 +44,7 @@ export class ThayAuth {
             const err = new Error(data.error || `Request failed: ${res.status}`);
             err.status = res.status;
             err.code = data.code;
+            err.retryAfter = data.retryAfter;
             err.data = data;
             throw err;
         }
@@ -218,5 +219,55 @@ export class ThayAuth {
     async getApps() {
         const data = await this.request('/auth/apps');
         return data.apps;
+    }
+    async getSubscription() {
+        return this.request('/auth/subscription');
+    }
+    /** Create a checkout session for upgrading tiers (Stripe or mock). */
+    async createCheckout(tier) {
+        return this.request('/auth/subscription/checkout', {
+            method: 'POST',
+            body: JSON.stringify({ tier }),
+        });
+    }
+    /** Open the billing portal (cancel / update payment method). */
+    async openBillingPortal() {
+        return this.request('/auth/subscription/portal', {
+            method: 'POST',
+            body: JSON.stringify({}),
+        });
+    }
+    async cancelSubscription() {
+        return this.request('/auth/subscription/cancel', {
+            method: 'POST',
+            body: JSON.stringify({}),
+        });
+    }
+    /** Best-effort relay of the current session to a sibling thaypley subdomain. */
+    async relayPlatform() {
+        const res = await fetch(`${this.baseUrl}/auth/relay`, {
+            method: 'POST',
+            headers: this.token ? { 'Authorization': `Bearer ${this.token}` } : {},
+            credentials: 'include',
+        });
+        if (!res.ok) return false;
+        return true;
+    }
+    /**
+     * Consume the thay_auth_relay cookie (set by /auth/relay before the
+     * account switcher navigates). Used by sibling subdomains at boot:
+     * returns a fresh session for the local app + the raw pbToken for
+     * legacy platforms that verify against PocketBase directly.
+     */
+    async consumeRelay(aud = 'homebase') {
+        const res = await fetch(`${this.baseUrl}/auth/consume-relay`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ aud }),
+            credentials: 'include',
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return null;
+        return data;
     }
 }
