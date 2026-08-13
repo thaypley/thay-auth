@@ -13,6 +13,11 @@ services:
     container_name: thay-auth
     restart: unless-stopped
     env_file: .env
+    extra_hosts:
+      # Linux Docker Engine does not resolve host.docker.internal by
+      # default; this maps it to the host bridge gateway so the container
+      # can reach PocketBase running on the VPS host (PB_URL=…:8090).
+      - "host.docker.internal:host-gateway"
     ports:
       # host-local only — never 0.0.0.0. nginx reverse-proxies a subdomain here.
       - "127.0.0.1:3749:3749"
