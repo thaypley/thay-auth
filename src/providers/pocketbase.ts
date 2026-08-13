@@ -70,7 +70,17 @@ export async function getAdminPb(): Promise<PocketBase> {
       authPromise = null;
       lastAuthFailureAt = Date.now();
       metrics.inc('thay_auth_pb_errors_total', { op: 'adminAuth' });
-      logger.error('Failed to authenticate admin PocketBase client:', err);
+      // Distinguish the two most common failure modes so the next occurrence
+      // is diagnosable from the log alone:
+      //   400 = credentials rejected (PB_ADMIN_EMAIL/PB_ADMIN_PASSWORD mismatch)
+      //   0   = PB unreachable (wrong PB_URL / PB down) — no HTTP status at all
+      const status = (err as { status?: number })?.status;
+      const hint = status === 400
+        ? 'PB rejected the admin credentials — check PB_ADMIN_EMAIL / PB_ADMIN_PASSWORD in the deploy .env'
+        : status === 0
+          ? 'PB unreachable — check PB_URL (cannot reach the PocketBase instance)'
+          : `PB admin auth failed with HTTP ${status ?? 'unknown'}`;
+      logger.error(`Failed to authenticate admin PocketBase client: ${hint}`, err);
       if (adminPb) return adminPb; // degraded: stale token, ops will 401
       throw err;
     });

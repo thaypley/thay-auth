@@ -177,6 +177,10 @@ async function ensureDevicesCollection(pb) {
       { name: 'lastSeenAt', type: 'date', required: false },
       { name: 'expiresAt', type: 'date', required: false },
       { name: 'revoked', type: 'bool', required: false },
+      // PB ≥0.24: base collections have no implicit created/updated — the
+      // app sorts devices by -created, so create them explicitly.
+      { type: 'autodate', name: 'created', onCreate: true, onUpdate: false, hidden: false },
+      { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true, hidden: false },
     ],
     indexes: ['CREATE INDEX idx_devices_user ON devices (userId)'],
   });
@@ -200,6 +204,37 @@ async function ensureField(pb, collectionName, field, label) {
   }
   await pb.collections.update(collectionName, { fields: [...collection.fields, field] });
   console.log(`→ added ${label}`);
+}
+
+async function ensureAutodateFields(pb, collectionName, label) {
+  let collection;
+  try {
+    collection = await pb.collections.getOne(collectionName);
+  } catch (e) {
+    if (e.status === 404) {
+      console.log(`⚠ ${collectionName} collection missing — skipping ${label} autodate`);
+      return;
+    }
+    throw e;
+  }
+  const createField = {
+    type: 'autodate', name: 'created', onCreate: true, onUpdate: false, hidden: false,
+  };
+  const updateField = {
+    type: 'autodate', name: 'updated', onCreate: true, onUpdate: true, hidden: false,
+  };
+  const missing = [];
+  if (!hasField(collection, 'created')) missing.push(createField);
+  if (!hasField(collection, 'updated')) missing.push(updateField);
+  if (missing.length === 0) {
+    console.log(`✓ ${label} autodate (created/updated) already present — nothing to do`);
+    return;
+  }
+  const fresh = await pb.collections.getOne(collectionName);
+  await pb.collections.update(collectionName, {
+    fields: [...fresh.fields, ...missing],
+  });
+  for (const f of missing) console.log(`→ added ${collectionName}.${f.name} autodate`);
 }
 
 async function upsertCatalog(pb) {
@@ -246,6 +281,16 @@ async function main() {
   console.log('Authenticated as admin.\n');
 
   await ensureDevicesCollection(pb);
+
+  // PB ≥0.24 stores base collections without implicit `created`/`updated`
+  // autodate fields (they are only auto-added to AUTH collections). The app
+  // sorts /devices, /auth/invites and /sessions by `-created`, which PB
+  // rejects with 400 when the field is absent — so ensure them explicitly.
+  await ensureAutodateFields(pb, 'devices', 'devices');
+  await ensureAutodateFields(pb, 'signup_invites', 'signup_invites');
+  await ensureAutodateFields(pb, 'sessions', 'sessions');
+  await ensureAutodateFields(pb, 'user_apps', 'user_apps');
+  await ensureAutodateFields(pb, 'catalog_apps', 'catalog_apps');
 
   await ensureField(pb, 'users', { name: 'avatarVersion', type: 'number', required: false, min: 0, max: 999999 }, 'users.avatarVersion');
   await ensureField(pb, 'user_apps', { name: 'syncUrl', type: 'text', required: false, max: 500 }, 'user_apps.syncUrl');

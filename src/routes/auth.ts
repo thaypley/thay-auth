@@ -76,10 +76,18 @@ async function safeList(
  * infrastructure, not a broken endpoint.
  * Any other error stays a real 500.
  */
-function pbErrorStatus(err: unknown): number {
+export function pbErrorStatus(err: unknown): number {
   const status = (err as { status?: number })?.status;
-  if (status === 401 || status === 403 || status === 404) {
-    invalidateAdminPb();
+  // 401/403 = stale admin session; 404 = collection missing on a fresh PB
+  // instance; 400 = admin-auth rejection (wrong/rotated PB_ADMIN_*
+  // credentials) or schema drift. All are retryable infrastructure states.
+  // The SDK marks transport failures (PB unreachable) as status 0; >=500
+  // = upstream failure. Only SDK errors carry a numeric status — a bare
+  // Error (status undefined) is a programming bug and stays a real 500.
+  if (status === 401 || status === 403 || status === 404 || status === 400 || status === 0 || (typeof status === 'number' && status >= 500)) {
+    if (status === 401 || status === 403 || status === 400) {
+      invalidateAdminPb();
+    }
     return 503;
   }
   return 500;

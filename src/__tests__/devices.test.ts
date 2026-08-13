@@ -11,8 +11,20 @@ describe('devices route resilience', () => {
     expect(pbUnavailable({ status: 403 })).toBe(503);
   });
 
-  it('leaves real server errors as 500', () => {
-    expect(pbUnavailable({ status: 500 })).toBe(0);
+  it('maps PB 400 (admin-auth rejection / schema drift) to 503', () => {
+    expect(pbUnavailable({ status: 400 })).toBe(503);
+  });
+
+  it('maps PB transport errors (status 0) and upstream 5xx to 503', () => {
+    // The PocketBase SDK always gives ClientResponseError a numeric status;
+    // 0 is its signature for network-level failures (ECONNREFUSED, DNS,
+    // timeout). A bare Error is NOT a PB failure and stays a real 500.
+    expect(pbUnavailable({ status: 0 })).toBe(503);
+    expect(pbUnavailable({ status: 502 })).toBe(503);
+    expect(pbUnavailable({ status: 503 })).toBe(503);
+  });
+
+  it('leaves programming/client-validation errors as 500', () => {
     expect(pbUnavailable({ status: 422 })).toBe(0);
     expect(pbUnavailable(new Error('boom'))).toBe(0);
     expect(pbUnavailable(null)).toBe(0);

@@ -42,16 +42,24 @@ function invalidateDevice(deviceId: string): void {
 export const PAIRING_UNAVAILABLE = { error: "Device pairing is temporarily unavailable", code: "DEVICE_PAIRING_UNAVAILABLE" };
 
 /**
- * Maps PB collection-missing (404) and transient auth
- * infrastructure errors (401/403) to a client-actionable 503.
- * Returns 0 when the error should surface as a real 500.
+ * Maps PB failures to a client-actionable 503, or 0 when the error must
+ * surface as a real 500.
+ *   401/403 = stale admin session → force re-auth on next request.
+ *   404     = collection missing on a fresh PB instance.
+ *   400     = admin-auth rejection (wrong/rotated PB_ADMIN_* credentials
+ *             return 400 from auth-with-password) or schema drift on an
+ *             upgraded instance → retryable infra, not a broken endpoint.
+ *   0/5xx   = PB unreachable or server-side failure (DNS, ECONNREFUSED,
+ *             timeout, 500/502/503) → transient, client should retry.
  */
 export function pbUnavailable(err: unknown): number {
   const status = (err as { status?: number })?.status;
-  if (status === 401 || status === 403) {
+  if (status === 401 || status === 403 || status === 400) {
     invalidateAdminPb();
   }
-  return status === 404 || status === 401 || status === 403 ? 503 : 0;
+  return status === 404 || status === 401 || status === 403 || status === 400
+    || status === 0 || (typeof status === 'number' && status >= 500)
+    ? 503 : 0;
 }
 
 function normalizeScopes(scopes: unknown): string[] {
@@ -234,6 +242,10 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error('list devices error:', err);
+    const unavailable = pbUnavailable(err);
+    if (unavailable) {
+      return res.status(unavailable).json({ error: 'Thay services are temporarily unavailable' });
+    }
     return res.status(500).json({ error: 'Failed to list devices' });
   }
 });

@@ -3,6 +3,8 @@ import { getAdminPb } from '../providers/pocketbase.js';
 import { requireUser, markSessionRevokedByHash } from '../middleware/requireAuth.js';
 import { logger } from '../utils/logger.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
+import { invalidateAdminPb } from '../providers/pocketbase.js';
+import { pbErrorStatus } from './auth.js';
 
 const router = Router();
 
@@ -39,6 +41,11 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
     });
   } catch (err) {
     logger.error('list sessions error:', err);
+    const status = pbErrorStatus(err);
+    if (status === 503) {
+      invalidateAdminPb();
+      return res.status(503).json({ error: 'Thay services are temporarily unavailable' });
+    }
     return res.status(500).json({ error: 'Failed to list sessions' });
   }
 });
