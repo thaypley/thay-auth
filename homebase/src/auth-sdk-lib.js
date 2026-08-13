@@ -39,7 +39,16 @@ export class ThayAuth {
             ...options,
             headers,
         });
-        const data = await res.json();
+        let data = {};
+        // A 5xx from the edge (nginx/Cloudflare) is often HTML, not JSON.
+        // res.json() would throw a SyntaxError BEFORE we attach .status, turning
+        // a recoverable 503 into an opaque "Failed to fetch" with no code.
+        try {
+            data = await res.json();
+        }
+        catch {
+            data = {};
+        }
         if (!res.ok) {
             const err = new Error(data.error || `Request failed: ${res.status}`);
             err.status = res.status;

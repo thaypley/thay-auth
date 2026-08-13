@@ -186,5 +186,5 @@ export default async function BillingPage(container) {
   ]));
   body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [purchasesCard]));
 
-  setTimeout(() => staggerIn(body), 150);
+  setTimeout(() => staggerIn(body, '.billing-tier, .device-item', 150), 150);
 }

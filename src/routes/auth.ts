@@ -57,8 +57,12 @@ async function safeList(
   try {
     return await pb.collection(collection).getList(page, perPage, options);
   } catch (err) {
-    if ((err as { status?: number })?.status === 404) {
-      logger.warn(`collection "${collection}" missing on PB instance`, { collection });
+    const status = (err as { status?: number })?.status;
+    // 404 = collection missing on a fresh PB instance; 400 = schema drift
+    // / invalid pagination on an upgraded instance. Both should read as an
+    // empty list rather than take down the whole endpoint.
+    if (status === 404 || status === 400) {
+      logger.warn(`collection "${collection}" unavailable on PB instance`, { collection, status });
       return { items: [] };
     }
     throw err;
@@ -1736,7 +1740,9 @@ function generateInviteCode(): string {
 router.get('/invites', requireArchitect, async (_req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
-    const invites = await safeList(pb, 'signup_invites', 1, 500, {
+    // Cap perPage at PocketBase's default maxPerPage (200) so instances
+    // without a raised maxPerPage don't reject the request.
+    const invites = await safeList(pb, 'signup_invites', 1, 200, {
       sort: '-created',
     });
     return res.status(200).json({
@@ -1759,6 +1765,16 @@ router.get('/invites', requireArchitect, async (_req: Request, res: Response) =>
     });
   } catch (err) {
     logger.error('/invites GET error:', err);
+    const status = pbErrorStatus(err);
+    if (status === 503) {
+      // Architect page renders a retry card and auto-recovers instead of
+      // showing a permanent "something broke" state.
+      return res.status(503).json({
+        error: 'Failed to fetch invites',
+        code: 'INVITES_UNAVAILABLE',
+        retryAfter: 5,
+      });
+    }
     return res.status(500).json({ error: 'Failed to fetch invites' });
   }
 });

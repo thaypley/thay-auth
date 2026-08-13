@@ -125,5 +125,5 @@ export default async function SettingsPage(container) {
   body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [accountCard]));
   body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [sessionsCard]));
 
-  setTimeout(() => staggerIn(body), 150);
+  setTimeout(() => staggerIn(body, '.vibe-swatch, .device-item', 150), 150);
 }

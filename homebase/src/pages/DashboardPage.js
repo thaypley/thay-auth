@@ -244,7 +244,7 @@ export default async function DashboardPage(container) {
 
     // Animations
     pageTransition(grid);
-    setTimeout(() => staggerIn(grid), 200);
+    setTimeout(() => staggerIn(grid, '.app-card, .device-item, .platform-chip', 200), 200);
   } catch (err) {
     console.error('Dashboard render failed:', err);
     showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load");

@@ -105,5 +105,5 @@ export default async function PlatformsPage(container) {
     ]),
   ]));
 
-  setTimeout(() => staggerIn(shellEl), 150);
+  setTimeout(() => staggerIn(shellEl, '.platform-card', 150), 150);
 }

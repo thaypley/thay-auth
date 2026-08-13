@@ -133,5 +133,5 @@ export default async function DownloadsPage(container) {
     body.appendChild(section);
   }
 
-  setTimeout(() => staggerIn(body), 150);
+  setTimeout(() => staggerIn(body, '.catalog-card', 150), 150);
 }

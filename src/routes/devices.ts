@@ -191,11 +191,14 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
     try {
       devices = await pb.collection('devices').getList(page, perPage, {
         filter: `userId="${escapePbFilterValue(req.user!.id)}"`,
-        sort: '-createdAt',
+        sort: '-created',
       });
     } catch (err) {
       const pbStatus = (err as { status?: number })?.status;
-      if (pbStatus === 404) {
+      // Missing collection (404) or schema drift / invalid sort on a fresh
+      // or upgraded PB instance (400) must read as an empty list, not a 500
+      // that takes down the whole dashboard.
+      if (pbStatus === 404 || pbStatus === 400) {
         return res.status(200).json({
           devices: [],
           pagination: { page, perPage, total: 0, pages: 0 },
@@ -215,6 +218,9 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
       lastSeenAt: d.lastSeenAt,
       expiresAt: d.expiresAt,
       revoked: d.revoked,
+      // PocketBase's canonical created timestamp — PB uses `created`, not
+      // `createdAt`, so surface it under the client-side name explicitly.
+      createdAt: d.created,
     }));
 
     return res.status(200).json({
