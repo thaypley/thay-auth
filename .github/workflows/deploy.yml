@@ -61,7 +61,7 @@ jobs:
           #    reads users.avatarVersion, user_apps.syncUrl, catalog_apps.kind
           #    and the full roster. The shared prod PB does not auto-run
           #    pb_migrations/, so this idempotent admin-API sync lands first.
-          docker compose run --rm -T thay-auth node scripts/sync-live-schema.mjs
+          docker compose run --rm --no-deps -T thay-auth node scripts/sync-live-schema.mjs < /dev/null
 
           # 5. Hard-replace the container. --force-recreate alone does NOT
           #    reliably swap a healthy container when only the image changed
