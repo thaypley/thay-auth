@@ -29,13 +29,34 @@ let lastAuthAt = 0;
 let lastAuthFailureAt = 0;
 let authPromise: Promise<PocketBase> | null = null;
 
+// The prod PocketBase (thaypley.com/hcgi/platform) sits behind
+// Cloudflare, and CF's bot management blocks requests whose User-Agent
+// looks like a script (Node's default fetch UA is simply `node`). A
+// blocked admin read surfaces as PB 403 -> pbErrorStatus maps it to 503
+// `PROFILE_UNAVAILABLE` — the dashboard's dead-end error. Pin a
+// browser-compatible UA on every PB request (override via PB_USER_AGENT
+// for debugging or when fronting PB with a bot-allow list).
+const PB_USER_AGENT = process.env.PB_USER_AGENT ||
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
+  'Chrome/126.0.0.0 Safari/537.36';
+
+function pinUserAgent(pb: PocketBase): PocketBase {
+  pb.beforeSend = (url, options) => {
+    options.headers = Object.assign({}, options.headers, {
+      'User-Agent': PB_USER_AGENT,
+    });
+    return { url, options };
+  };
+  return pb;
+}
+
 export function createClient(url?: string): PocketBase {
   const pb = new PocketBase(url || config.pbUrl);
   // Per-call clients must not auto-cancel either: e.g. two concurrent
   // /auth/refresh calls on separate clients are fine, but a login and a
   // signup hitting the same path on the same client would abort.
   pb.autoCancellation(false);
-  return pb;
+  return pinUserAgent(pb);
 }
 
 export async function getAdminPb(): Promise<PocketBase> {
@@ -67,6 +88,7 @@ export async function getAdminPb(): Promise<PocketBase> {
     authPromise = (async () => {
       const pb = new PocketBase(config.pbUrl);
       pb.autoCancellation(false);
+      pinUserAgent(pb);
       await pb.admins.authWithPassword(config.pbAdminEmail, config.pbAdminPassword);
       adminPb = pb;
       lastAuthAt = Date.now();

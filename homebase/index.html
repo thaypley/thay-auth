@@ -8,8 +8,16 @@
   <!-- Strict CSP: every font/CSS asset is self-hosted, and the only allowed
        API origins are this origin plus the legacy api.thaypley.com host.
        Third-party requests (the old direct Open-Meteo fetch) are impossible,
-       so ERR_BLOCKED_BY_CLIENT can never take a UI surface down again. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://thaypley.com; font-src 'self'; connect-src 'self' https://api.thaypley.com; frame-src 'none'; object-src 'none'; base-uri 'self'" />
+       so ERR_BLOCKED_BY_CLIENT can never take a UI surface down again.
+
+       The Cloudflare hosts are the edge-injected Web Analytics beacon
+       (static.cloudflareinsights.com/beacon.min.js) and its RUM reporting
+       endpoint (cloudflareinsights.com/cdn-cgi/rum). Blocking them produces
+       a zero-value console CSP violation on every Cloudflare-served page.
+       The beacon has no access to user data (CSP still blocks cookies to
+       third parties and the script cannot reach the API — connect-src only
+       allows this origin + api.thaypley.com). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://thaypley.com; font-src 'self'; connect-src 'self' https://api.thaypley.com https://cloudflareinsights.com; frame-src 'none'; object-src 'none'; base-uri 'self'" />
   <title>thay — home base</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <!-- --font-body / --font-mono in tokens.css reference DM Sans / Space Mono.

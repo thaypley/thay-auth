@@ -72,7 +72,14 @@ export default async function DashboardPage(container) {
       const profile = await auth.getProfile();
       setState({ profile });
     } catch (err) {
-      console.error('Failed to load profile:', err);
+      // PROFILE_UNAVAILABLE is a transient infra state that auto-retries
+      // (showErrorCard schedules the reload) — log it as a warning, not a
+      // scary full-stack error.
+      if (err.code === 'PROFILE_UNAVAILABLE' || err.status === 503) {
+        console.warn('Profile unavailable (retrying):', err.code || err.status);
+      } else {
+        console.error('Failed to load profile:', err);
+      }
       if (err.status === 401) {
         // Token invalid — clear it so /login actually renders (with a token
         // it redirects back to '/', which is an infinite loop)
