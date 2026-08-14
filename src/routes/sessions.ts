@@ -19,7 +19,8 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
       sort: '-created',
     });
 
-    const result = (sessions as unknown as Record<string, unknown>[]).map(s => ({
+    const items = (sessions as unknown as { items?: Record<string, unknown>[] }).items ?? [];
+    const result = items.map(s => ({
       id: s.id,
       app: s.app || 'homebase',
       deviceId: s.deviceId,
