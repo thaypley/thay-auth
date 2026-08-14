@@ -63,21 +63,41 @@ jobs:
           #    pb_migrations/, so this idempotent admin-API sync lands first.
           docker compose run --rm -T thay-auth node scripts/sync-live-schema.mjs
 
-          # 5. Restart API — force-recreate is required: compose leaves a
-          #    healthy container untouched when only the image changed.
-          docker compose up -d --force-recreate thay-auth
+          # 5. Hard-replace the container. --force-recreate alone does NOT
+          #    reliably swap a healthy container when only the image changed
+          #    (observed: deploy reported success while the old container kept
+          #    running for 23h), so remove it explicitly and let compose
+          #    create a fresh one from the image we just built.
+          NEW_IMG=$(docker images -q thay-auth:latest)
+          docker rm -f thay-auth || true
+          docker compose up -d thay-auth
 
-          # 6. Wait for healthy
+          # 6. Assert the container actually runs the freshly built image —
+          #    fail loudly instead of reporting a false-success deploy.
+          RUNNING_IMG=$(docker inspect --format='{{.Image}}' thay-auth || echo missing)
+          echo "  image built: ${NEW_IMG}"
+          echo "  image running: ${RUNNING_IMG}"
+          if [ "$RUNNING_IMG" != "$NEW_IMG" ]; then
+            echo 'ERROR: container is not running the freshly built image — deploy failed'
+            docker compose ps
+            docker compose logs --tail=40 thay-auth || true
+            exit 1
+          fi
+
+          # 7. Wait for healthy (hard-fail instead of reporting success).
+          health="unknown"
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            status=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
-            echo "  [${i}0s] ${status}"
-            [ "$status" = "healthy" ] && break
+            health=$(docker inspect --format='{{.State.Health.Status}}' thay-auth || echo unknown)
+            echo "  [${i}0s] ${health}"
+            [ "$health" = "healthy" ] && break
             sleep 10
           done
-
-          # 7. Tail logs on failure
-          docker compose ps
-          docker compose logs --tail=40 thay-auth || true
+          if [ "$health" != "healthy" ]; then
+            echo "ERROR: container never became healthy (final state: $health)"
+            docker compose ps
+            docker compose logs --tail=40 thay-auth || true
+            exit 1
+          fi
 
           mkdir -p /var/www/auth.thaypley.com
           REMOTE
