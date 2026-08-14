@@ -24,8 +24,11 @@ describe('auth route PB error classification (pbErrorStatus)', () => {
     expect(pbErrorStatus({ status: 503 })).toBe(503);
   });
 
+  it('maps PB 422 (schema drift / invalid filter) to 503', () => {
+    expect(pbErrorStatus({ status: 422 })).toBe(503);
+  });
+
   it('leaves programming/client-validation errors as 500', () => {
-    expect(pbErrorStatus({ status: 422 })).toBe(500);
     expect(pbErrorStatus({ status: 409 })).toBe(500);
     expect(pbErrorStatus(new Error('boom'))).toBe(500);
     expect(pbErrorStatus(null)).toBe(500);

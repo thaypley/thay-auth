@@ -186,6 +186,15 @@ export class ThayAuth {
     async healthCheck() {
         return this.request('/auth/health');
     }
+    /**
+     * Ambient weather via the server-side Open-Meteo proxy. The browser
+     * never talks to a third-party host directly, so ad-blockers/content
+     * blockers in desktop webviews cannot kill the request with
+     * ERR_BLOCKED_BY_CLIENT.
+     */
+    async getWeather(lat, lon) {
+        return this.request(`/auth/weather?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    }
     async getProfile() {
         return this.request('/auth/profile');
     }

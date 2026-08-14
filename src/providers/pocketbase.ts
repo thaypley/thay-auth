@@ -50,7 +50,13 @@ export async function getAdminPb(): Promise<PocketBase> {
   // retry auth at most every 5s.
   if (lastAuthFailureAt !== 0 && now - lastAuthFailureAt < AUTH_FAIL_FAST_MS) {
     if (adminPb) return adminPb;
-    throw new Error('PB admin auth failing (circuit open)');
+    // Attach a PB-style numeric status so downstream resilience mappers
+    // (pbUnavailable / pbErrorStatus) classify this as transport-level
+    // failure (PB unreachable -> 503) instead of a bare programming Error
+    // that surfaces as a real 500.
+    const circuitErr = new Error('PB admin auth failing (circuit open)') as Error & { status?: number };
+    circuitErr.status = 0;
+    throw circuitErr;
   }
 
   // Single-flight: concurrent cold calls share ONE auth attempt instead

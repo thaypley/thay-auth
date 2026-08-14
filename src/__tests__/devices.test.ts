@@ -24,8 +24,24 @@ describe('devices route resilience', () => {
     expect(pbUnavailable({ status: 503 })).toBe(503);
   });
 
+  it('maps PB 422 (schema drift / invalid filter) to 503', () => {
+    // PB 422 = the filter/sort references a field the running schema does
+    // not have. The list handler degrades it to an empty list after a
+    // fallback query; everywhere else it is retryable infrastructure.
+    expect(pbUnavailable({ status: 422 })).toBe(503);
+  });
+
+  it('classifies a bare circuit-open Error as a 503, not a 500', () => {
+    // getAdminPb's fail-fast circuit throws a plain Error when PB has been
+    // unreachable for <5s. Attaching status 0 makes pbUnavailable map it to
+    // a retryable 503 instead of a confusing real 500.
+    const circuit = new Error('PB admin auth failing (circuit open)');
+    (circuit as Error & { status?: number }).status = 0;
+    expect(pbUnavailable(circuit)).toBe(503);
+  });
+
   it('leaves programming/client-validation errors as 500', () => {
-    expect(pbUnavailable({ status: 422 })).toBe(0);
+    expect(pbUnavailable({ status: 418 })).toBe(0);
     expect(pbUnavailable(new Error('boom'))).toBe(0);
     expect(pbUnavailable(null)).toBe(0);
   });

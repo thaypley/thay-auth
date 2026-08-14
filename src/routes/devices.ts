@@ -46,9 +46,11 @@ export const PAIRING_UNAVAILABLE = { error: "Device pairing is temporarily unava
  * surface as a real 500.
  *   401/403 = stale admin session → force re-auth on next request.
  *   404     = collection missing on a fresh PB instance.
- *   400     = admin-auth rejection (wrong/rotated PB_ADMIN_* credentials
+ *   400/422 = admin-auth rejection (wrong/rotated PB_ADMIN_* credentials
  *             return 400 from auth-with-password) or schema drift on an
  *             upgraded instance → retryable infra, not a broken endpoint.
+ *             GET /devices additionally degrades 422 to an empty list
+ *             after a fallback query (see list handler).
  *   0/5xx   = PB unreachable or server-side failure (DNS, ECONNREFUSED,
  *             timeout, 500/502/503) → transient, client should retry.
  */
@@ -57,7 +59,7 @@ export function pbUnavailable(err: unknown): number {
   if (status === 401 || status === 403 || status === 400) {
     invalidateAdminPb();
   }
-  return status === 404 || status === 401 || status === 403 || status === 400
+  return status === 404 || status === 401 || status === 403 || status === 400 || status === 422
     || status === 0 || (typeof status === 'number' && status >= 500)
     ? 503 : 0;
 }
@@ -204,13 +206,51 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
     } catch (err) {
       const pbStatus = (err as { status?: number })?.status;
       // Missing collection (404) or schema drift / invalid sort on a fresh
-      // or upgraded PB instance (400) must read as an empty list, not a 500
-      // that takes down the whole dashboard.
+      // or upgraded PB instance (400/422) must read as an empty list, not a
+      // 500 that takes down the whole dashboard.
       if (pbStatus === 404 || pbStatus === 400) {
         return res.status(200).json({
           devices: [],
           pagination: { page, perPage, total: 0, pages: 0 },
         });
+      }
+      // PB 422 = filter/sort references a field the running PB schema does
+      // not have (schema drift after an upgrade). Try an unfiltered list +
+      // in-JS filter so the dashboard still shows devices while the admin
+      // reconciles the schema. Any failure here degrades to an empty list.
+      if (pbStatus === 422) {
+        logger.warn('devices schema drift (422) — falling back to client-side userId filter');
+        try {
+          const list = await pb.collection('devices').getList(page, perPage, { sort: '-created' });
+          const filtered = (list as unknown as Record<string, unknown>[]).filter(
+            d => d.userId === req.user!.id
+          );
+          return res.status(200).json({
+            devices: filtered.map(d => ({
+              id: d.id,
+              label: d.label,
+              scopes: d.scopes,
+              lastSeenAt: d.lastSeenAt,
+              expiresAt: d.expiresAt,
+              revoked: d.revoked,
+              createdAt: d.created,
+            })),
+            pagination: {
+              page,
+              perPage,
+              total: filtered.length,
+              pages: Math.ceil(filtered.length / perPage) || 0,
+            },
+          });
+        } catch (fallbackErr) {
+          logger.warn('devices schema drift — serving empty list', {
+            status: (fallbackErr as { status?: number })?.status,
+          });
+          return res.status(200).json({
+            devices: [],
+            pagination: { page, perPage, total: 0, pages: 0 },
+          });
+        }
       }
       if (pbStatus === 401 || pbStatus === 403) {
         invalidateAdminPb();

@@ -112,9 +112,11 @@ async function render() {
       <div class="error-page">
         <h1 style="font-size: 2.5rem;">oops</h1>
         <p>something broke loading this page — try refreshing.</p>
-        <button class="btn btn-primary" onclick="location.reload()">refresh</button>
+        <button id="error-refresh" class="btn btn-primary">refresh</button>
       </div>
     `;
+    // CSP forbids inline event handlers (script-src 'self'); use a listener.
+    document.getElementById('error-refresh')?.addEventListener('click', () => location.reload());
   }
 }
 

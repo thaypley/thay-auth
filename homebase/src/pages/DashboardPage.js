@@ -10,12 +10,22 @@ import { mountWeather } from '../utils/sky.js';
 import { NavBar } from '../components/NavBar.js';
 
 export default async function DashboardPage(container) {
-  // Ambient weather particles (rain/snow/fog) — dashboard only, where users
-  // linger. Auth pages stay calm.
-  mountWeather();
+  // Ambient weather particles — only when opted in from Settings. mountWeather
+  // itself checks localStorage.thay_weather_optin and skips Tauri webviews, so
+  // no CoreLocation prompt ever fires from page load.
+  let weatherCleanup = null;
+  const startedWeather = mountWeather();
+  if (typeof startedWeather === 'function') {
+    weatherCleanup = startedWeather;
+  }
+  const stopWeatherBeforeLeaving = () => {
+    if (weatherCleanup) weatherCleanup();
+    weatherCleanup = null;
+  };
   // Ensure logged in
   const token = auth.getToken();
   if (!token) {
+    stopWeatherBeforeLeaving();
     navigate('/login', true);
     return;
   }
@@ -72,6 +82,7 @@ export default async function DashboardPage(container) {
         return;
       }
       // Server-side failure: show a retry state instead of looping
+      stopWeatherBeforeLeaving();
       showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load", err.code, err.retryAfter);
       return;
     }
@@ -82,15 +93,27 @@ export default async function DashboardPage(container) {
       auth.getApps(),
       auth.listDevices(),
     ]);
+    const devicesRejected = devices.status === 'rejected';
+    const appsRejected = apps.status === 'rejected';
+    if (devicesRejected || appsRejected) {
+      console.warn('non-fatal panel load failure', {
+        apps: appsRejected ? apps.reason : undefined,
+        devices: devicesRejected ? devices.reason : undefined,
+      });
+    }
     setState({
       apps: apps.status === 'fulfilled' ? apps.value : [],
       devices: devices.status === 'fulfilled' ? devices.value : [],
+      // The dashboard renders a visible retry chip + live/expired dots below.
+      _appsHiccup: appsRejected,
+      _devicesHiccup: devicesRejected,
     });
     state = getState();
   }
 
   const profile = state.profile;
   if (profile && !profile.isVerified) {
+    stopWeatherBeforeLeaving();
     navigate('/verify', true);
     return;
   }
@@ -184,24 +207,59 @@ export default async function DashboardPage(container) {
 
     // ─── Devices Panel ─────────────────────────────────────────────
 
+    const devicesHiccup = state._devicesHiccup;
+    const appsHiccup = state._appsHiccup;
+
+    // A device is "live" when its token expiry is in the future and it has
+    // not been revoked — gives the panel a real-time health signal instead
+    // of a static label.
+    const deviceState = (d) => {
+      if (d.revoked) return { dot: 'device-dot device-dot--expired', text: 'revoked' };
+      if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
+        return { dot: 'device-dot device-dot--expired', text: 'expired' };
+      }
+      return { dot: 'device-dot device-dot--live', text: 'live' };
+    };
+
     const deviceItems = devices.length > 0
-      ? devices.map(d => h('div', { className: 'device-item' }, [
-        h('div', { className: 'device-info' }, [
-          h('span', { className: 'device-label' }, [d.label || 'unknown device']),
-          h('span', { className: 'device-meta' }, [
-            d.lastSeenAt ? `last seen ${new Date(d.lastSeenAt).toLocaleDateString()}` : '',
+      ? devices.map(d => {
+        const st = deviceState(d);
+        return h('div', { className: 'device-item' }, [
+          h('div', { className: 'device-info' }, [
+            h('span', { className: 'device-label' }, [
+              h('span', { className: st.dot, title: st.text }),
+              d.label || 'unknown device',
+            ]),
+            h('span', { className: 'device-meta' }, [
+              d.lastSeenAt ? `last seen ${new Date(d.lastSeenAt).toLocaleDateString()}` : '',
+              d.expiresAt ? ` · expires ${new Date(d.expiresAt).toLocaleDateString()}` : '',
+            ]),
           ]),
-        ]),
-      ]))
+        ]);
+      })
       : h('div', { style: { textAlign: 'center', padding: '16px' } }, [
         h('p', { className: 'input-hint', style: { marginBottom: '4px' } }, ['no devices paired yet']),
         h('p', { className: 'input-hint' }, ["pair one from any thaypley app's settings to see it here"]),
       ]);
 
+    const hiccupChip = devicesHiccup
+      ? h('div', { className: 'panel-hiccup', role: 'status' }, [
+          h('span', {}, ['devices hiccuped — show', ' retry']),
+          h('button', {
+            className: 'btn btn-ghost btn-sm',
+            onClick: () => location.reload(),
+          }, ['retry']),
+        ])
+      : null;
+
     const devicesSection = h('div', { className: 'glass-card-static' }, [
       h('div', { className: 'section-header' }, [
         h('h3', {}, ['connected devices']),
+        h('span', { className: 'input-hint' }, [
+          appsHiccup ? 'some panels hiccuped' : `${devices.length} connected`,
+        ]),
       ]),
+      hiccupChip,
       h('div', { className: 'devices-list' }, deviceItems),
     ]);
 
@@ -245,8 +303,13 @@ export default async function DashboardPage(container) {
     // Animations
     pageTransition(grid);
     setTimeout(() => staggerIn(grid, '.app-card, .device-item, .platform-chip', 200), 200);
+
+    // Router cleanup: stop the weather poll and tear down its DOM whenever
+    // the user navigates away from the dashboard.
+    return stopWeatherBeforeLeaving;
   } catch (err) {
     console.error('Dashboard render failed:', err);
+    stopWeatherBeforeLeaving();
     showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load");
   }
 }

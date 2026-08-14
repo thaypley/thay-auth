@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#5badf0" />
   <meta name="description" content="thay — your home base for all thay-applications" />
+  <!-- Strict CSP: every font/CSS asset is self-hosted, and the only allowed
+       API origins are this origin plus the legacy api.thaypley.com host.
+       Third-party requests (the old direct Open-Meteo fetch) are impossible,
+       so ERR_BLOCKED_BY_CLIENT can never take a UI surface down again. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://thaypley.com; font-src 'self'; connect-src 'self' https://api.thaypley.com; frame-src 'none'; object-src 'none'; base-uri 'self'" />
   <title>thay — home base</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <!-- --font-body / --font-mono in tokens.css reference DM Sans / Space Mono.
@@ -36,15 +41,7 @@
       <p style="color:rgba(35,31,32,.62);font-size:.875rem">loading home base…</p>
     </div>
   </div>
-  <script>
-    // PocketBase sends password-reset emails with URLs like
-    // /_/auth/reset-password/{TOKEN} based on meta.appURL.
-    // Redirect to the hash-routed SPA page that our ResetPasswordPage handles.
-    (function(){
-      var m = location.pathname.match(/^\/_\/auth\/reset-password\/(.+)$/);
-      if (m) location.replace('/#/reset-password?token=' + encodeURIComponent(m[1]));
-    })();
-  </script>
+  <script src="/reset-redirect.js"></script>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

@@ -2,10 +2,32 @@ import { ThayAuth } from './auth-sdk-lib.js';
 
 const STORAGE_TOKEN_KEY = 'thay_homebase_token';
 
+// Origin resolution:
+//   browser dev        (localhost:5173)     → /api (Vite proxy → 3749)
+//   Tauri desktop      (tauri://localhost or localhost in a WKWebView)
+//                                          → api.thaypley.com (Tauri CSP
+//                                            allows exactly that origin; a
+//                                            same-origin /api would attempt
+//                                            tauri://localhost/api and fail)
+//   auth.thaypley.com  (prod SPA)           → /api (nginx already proxies
+//                                            /auth|/devices|/sessions — no
+//                                            need for a cross-origin hop that
+//                                            costs a DNS + TLS round trip)
+const isTauri =
+  window.location.protocol === 'tauri:' ||
+  window.location.hostname === 'tauri.localhost' ||
+  !!window.__TAURI_INTERNALS__;
+const hostname = window.location.hostname;
+const isLocal = (hostname === 'localhost' || hostname === '127.0.0.1') && !isTauri;
+const isProdSpa = !isTauri && hostname === 'auth.thaypley.com';
+
 const auth = new ThayAuth({
-  baseUrl: window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? '/api'
-    : 'https://api.thaypley.com',
+  // Dev: /api (Vite proxy strips the prefix to /auth|/devices|/sessions).
+  // Prod SPA on auth.thaypley.com: '' (same-origin — nginx proxies the
+  // /auth|/devices|/sessions tree directly, so a leading /api would hit
+  // the SPA fallback and return index.html instead of JSON).
+  // Anywhere else (Tauri desktop): the legacy api.thaypley.com host.
+  baseUrl: isLocal ? '/api' : (isProdSpa ? '' : 'https://api.thaypley.com'),
 });
 
 const savedToken = localStorage.getItem(STORAGE_TOKEN_KEY);

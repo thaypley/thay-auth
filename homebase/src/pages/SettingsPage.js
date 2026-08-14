@@ -11,6 +11,9 @@ import { pageTransition, staggerIn } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
 import { toast } from '../utils/toast.js';
 import { VIBES, applyVibe, getVibeColor, loadVibe } from '../utils/vibes.js';
+import { mountWeather } from '../utils/sky.js';
+
+let weatherCleanup = null;
 
 export default async function SettingsPage(container) {
   const token = auth.getToken();
@@ -55,6 +58,42 @@ export default async function SettingsPage(container) {
       h('span', { className: 'input-hint' }, ['vibe themes']),
     ]),
     h('div', { className: 'vibe-swatch-grid' }, swatches),
+  ]);
+
+  // ─── Ambient weather ────────────────────────────────────────────
+  const WEATHER_OPTIN_KEY = 'thay_weather_optin';
+  const weatherEnabled = localStorage.getItem(WEATHER_OPTIN_KEY) === '1';
+  const weatherToggle = h('button', {
+    className: 'btn ' + (weatherEnabled ? 'btn-primary' : 'btn-secondary'),
+    type: 'button',
+    'aria-pressed': weatherEnabled ? 'true' : 'false',
+    onClick: () => {
+      const nowOn = localStorage.getItem(WEATHER_OPTIN_KEY) !== '1';
+      if (nowOn) {
+        localStorage.setItem(WEATHER_OPTIN_KEY, '1');
+        const stop = mountWeather();
+        if (typeof stop === 'function') weatherCleanup = stop;
+        toast('ambient weather on — sky reacts to rain & snow', 'success');
+      } else {
+        localStorage.removeItem(WEATHER_OPTIN_KEY);
+        if (weatherCleanup) { weatherCleanup(); weatherCleanup = null; }
+        toast('ambient weather off', 'success');
+      }
+      weatherToggle.classList.toggle('btn-primary', nowOn);
+      weatherToggle.classList.toggle('btn-secondary', !nowOn);
+      weatherToggle.setAttribute('aria-pressed', nowOn ? 'true' : 'false');
+    },
+  }, [weatherEnabled ? 'ambient weather: on' : 'ambient weather: off']);
+
+  const weatherCard = h('div', { className: 'glass-card-static' }, [
+    h('div', { className: 'section-header' }, [
+      h('h3', {}, ['ambient weather']),
+      h('span', { className: 'input-hint' }, ['rain, snow & fog over the sky (uses your location)']),
+    ]),
+    h('p', { className: 'input-hint', style: { marginBottom: '12px' } }, [
+      'Everyone sees the same five-phase sky. This adds live particles from your local forecast — opt-in only, never on by default.',
+    ]),
+    weatherToggle,
   ]);
 
   // ─── Account management ──────────────────────────────────────────
@@ -122,8 +161,15 @@ export default async function SettingsPage(container) {
 
   body.appendChild(heading);
   body.appendChild(appearanceCard);
+  body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [weatherCard]));
   body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [accountCard]));
   body.appendChild(h('div', { style: { marginTop: 'var(--space-xl)' } }, [sessionsCard]));
 
   setTimeout(() => staggerIn(body, '.vibe-swatch, .device-item', 150), 150);
+
+  // Router cleanup: if this page started the weather overlay (toggle ON),
+  // stop it when leaving so the poll never leaks across pages.
+  return () => {
+    if (weatherCleanup) { weatherCleanup(); weatherCleanup = null; }
+  };
 }

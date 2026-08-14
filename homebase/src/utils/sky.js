@@ -191,6 +191,22 @@ export function buildPlatformSky() {
 // geolocation is denied — sky still works as normal. Idempotent; safe to call
 // anytime (auth pages never do — only the dashboard enables it).
 export function mountWeather() {
+  // Opt-in only: never request geolocation on page load. The dashboard
+  // calls this only after the user flips the ambient-weather toggle in
+  // Settings (localStorage.thay_weather_optin === '1').
+  if (localStorage.getItem('thay_weather_optin') !== '1') {
+    return () => {};
+  }
+  // Tauri desktop webviews have no geolocation permission — requesting it
+  // makes WKWebView's CoreLocationProvider log kCLErrorLocationUnknown and
+  // leaves dead particles behind. Skip entirely; the static sky still runs.
+  const isTauri =
+    window.location.protocol === 'tauri:' ||
+    window.location.hostname === 'tauri.localhost' ||
+    !!window.__TAURI_INTERNALS__;
+  if (isTauri) {
+    return () => {};
+  }
   if (document.getElementById('tp-weather')) { return; }
 
   const WEATHER_OVERLAYS = {
@@ -309,26 +325,36 @@ export function mountWeather() {
 
   async function fetchWeather(lat, lon) {
     try {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=weather_code&wind_speed_unit=mph`;
-      const res = await fetch(url);
-      if (!res.ok) { return; }
-      const data = await res.json();
-      const code = data?.current?.weather_code ?? 0;
-      applyWeather(wmoToOverlay(code));
+      // Server-side proxy (GET /auth/weather) — the browser makes zero
+      // third-party requests, so ERR_BLOCKED_BY_CLIENT is impossible.
+      const { default: auth } = await import('../sdk.js');
+      const data = await auth.getWeather(lat, lon);
+      applyWeather(wmoToOverlay(data?.weatherCode ?? 0));
     } catch (_) { /* silently skip on network error */ }
   }
 
+  let _wxTimer = null;
   function startWeatherPolling(lat, lon) {
     fetchWeather(lat, lon);
-    setInterval(() => fetchWeather(lat, lon), 15 * 60 * 1000);
+    _wxTimer = setInterval(() => fetchWeather(lat, lon), 15 * 60 * 1000);
   }
 
   if (navigator.geolocation) {
     navigator.geolocation.getCurrentPosition(
       pos => startWeatherPolling(pos.coords.latitude, pos.coords.longitude),
-      () => { /* permission denied — sky only, no weather layer */ }
+      () => { /* permission denied — sky only, no weather layer */ },
+      { maximumAge: 10 * 60 * 1000, timeout: 8000 },
     );
   }
+
+  // Router cleanup: stop the poll, clear the DOM, and remove the injected
+  // style so a later visit starts fresh (and Tauri never re-prompts).
+  return function stopWeather() {
+    if (_wxTimer) { clearInterval(_wxTimer); _wxTimer = null; }
+    clearWeatherParticles();
+    weatherEl.remove();
+    document.getElementById('tp-weather-style')?.remove();
+  };
 }
 
 export function initSky() {

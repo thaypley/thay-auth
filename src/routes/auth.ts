@@ -58,10 +58,10 @@ async function safeList(
     return await pb.collection(collection).getList(page, perPage, options);
   } catch (err) {
     const status = (err as { status?: number })?.status;
-    // 404 = collection missing on a fresh PB instance; 400 = schema drift
-    // / invalid pagination on an upgraded instance. Both should read as an
-    // empty list rather than take down the whole endpoint.
-    if (status === 404 || status === 400) {
+    // 404 = collection missing on a fresh PB instance; 400/422 = schema
+    // drift / invalid pagination on an upgraded instance. All should read as
+    // an empty list rather than take down the whole endpoint.
+    if (status === 404 || status === 400 || status === 422) {
       logger.warn(`collection "${collection}" unavailable on PB instance`, { collection, status });
       return { items: [] };
     }
@@ -84,7 +84,7 @@ export function pbErrorStatus(err: unknown): number {
   // The SDK marks transport failures (PB unreachable) as status 0; >=500
   // = upstream failure. Only SDK errors carry a numeric status — a bare
   // Error (status undefined) is a programming bug and stays a real 500.
-  if (status === 401 || status === 403 || status === 404 || status === 400 || status === 0 || (typeof status === 'number' && status >= 500)) {
+  if (status === 401 || status === 403 || status === 404 || status === 400 || status === 422 || status === 0 || (typeof status === 'number' && status >= 500)) {
     if (status === 401 || status === 403 || status === 400) {
       invalidateAdminPb();
     }
@@ -1849,6 +1849,70 @@ router.delete('/invites/:id', requireArchitect, async (req: Request, res: Respon
     logger.error('/invites DELETE error:', err);
     const msg = (err as { data?: { message?: string } })?.data?.message || 'Failed to delete invite';
     return res.status(400).json({ error: msg });
+  }
+});
+
+// ─── Weather proxy ─────────────────────────────────────────────────
+// Server-side Open-Meteo fetch so the SPA never makes a third-party
+// request (ad-blockers in desktop webviews kill direct browser fetches
+// with ERR_BLOCKED_BY_CLIENT). 15-minute in-memory cache keyed on the
+// rounded coordinates; Node 18+ global fetch, zero new deps.
+
+const weatherCache = new LRUCache<string, { weatherCode: number; temperature: number; windSpeed: number; updatedAt: string }>({
+  max: 500,
+  ttl: 15 * 60 * 1000,
+});
+
+function roundCoord(v: number): number { return Math.round(v * 100) / 100; }
+
+router.get('/weather', async (req: Request, res: Response) => {
+  try {
+    const lat = parseFloat(String(req.query.lat ?? ''));
+    const lon = parseFloat(String(req.query.lon ?? ''));
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+      return res.status(400).json({ error: 'lat and lon are required numbers' });
+    }
+
+    // Round to ~1km so nearby refreshes share one cache entry.
+    const key = `${roundCoord(lat)},${roundCoord(lon)}`;
+    const cached = weatherCache.get(key);
+    if (cached) {
+      return res.status(200).json({ ...cached, cached: true });
+    }
+
+    const url =
+      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&current=weather_code,temperature_2m,wind_speed_10m&wind_speed_unit=mph`;
+    const upstream = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!upstream.ok) {
+      logger.warn('Open-Meteo upstream failed', { status: upstream.status });
+      return res.status(503).json({ code: 'WEATHER_UNAVAILABLE', error: 'Weather is temporarily unavailable' });
+    }
+    const data = await upstream.json() as {
+      current?: { weather_code?: number; temperature_2m?: number; wind_speed_10m?: number };
+    };
+    const current = data.current ?? {};
+    const weatherCode = Number(current.weather_code) || 0;
+    const temperature = Number(current.temperature_2m) || 0;
+    const windSpeed = Number(current.wind_speed_10m) || 0;
+
+    const payload = {
+      weatherCode,
+      temperature,
+      windSpeed,
+      updatedAt: new Date().toISOString(),
+      cached: false,
+    };
+    weatherCache.set(key, {
+      weatherCode,
+      temperature,
+      windSpeed,
+      updatedAt: payload.updatedAt,
+    });
+    return res.status(200).json(payload);
+  } catch (err) {
+    logger.warn('weather proxy failed', err);
+    return res.status(503).json({ code: 'WEATHER_UNAVAILABLE', error: 'Weather is temporarily unavailable' });
   }
 });
 
