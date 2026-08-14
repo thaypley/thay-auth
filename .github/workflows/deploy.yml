@@ -68,12 +68,14 @@ jobs:
           #    (observed: deploy reported success while the old container kept
           #    running for 23h), so remove it explicitly and let compose
           #    create a fresh one from the image we just built.
-          NEW_IMG=$(docker images -q thay-auth:latest)
+          NEW_IMG=$(docker image inspect --format='{{.Id}}' thay-auth:latest)
           docker rm -f thay-auth || true
           docker compose up -d thay-auth
 
           # 6. Assert the container actually runs the freshly built image —
           #    fail loudly instead of reporting a false-success deploy.
+          #    NOTE: compare FULL image IDs — docker images -q returns the
+          #    short 12-char ID while inspect .Image returns sha256:<64-char>.
           RUNNING_IMG=$(docker inspect --format='{{.Image}}' thay-auth || echo missing)
           echo "  image built: ${NEW_IMG}"
           echo "  image running: ${RUNNING_IMG}"
