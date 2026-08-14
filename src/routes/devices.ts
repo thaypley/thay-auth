@@ -77,6 +77,25 @@ function normalizeScopes(scopes: unknown): string[] {
   });
 }
 
+/** Map PocketBase device rows to the client-facing shape.
+ * PB's getList returns a ListResult object { items, page, perPage, totalItems,
+ * totalPages } — handlers MUST read .items (a raw cast got shipped once and
+ * caused `devices.map is not a function` in production on every /devices call).
+ */
+export function mapDeviceItems(items: Record<string, unknown>[] | undefined): Record<string, unknown>[] {
+  return (items ?? []).map(d => ({
+    id: d.id,
+    label: d.label,
+    scopes: d.scopes,
+    lastSeenAt: d.lastSeenAt,
+    expiresAt: d.expiresAt,
+    revoked: d.revoked,
+    // PocketBase's canonical created timestamp — PB uses `created`, not
+    // `createdAt`, so surface it under the client-side name explicitly.
+    createdAt: d.created,
+  }));
+}
+
 function generateToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(64);
@@ -222,19 +241,12 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
         logger.warn('devices schema drift (422) — falling back to client-side userId filter');
         try {
           const list = await pb.collection('devices').getList(page, perPage, { sort: '-created' });
-          const filtered = (list as unknown as Record<string, unknown>[]).filter(
+          const fallbackItems = (list as unknown as { items?: Record<string, unknown>[] }).items ?? [];
+          const filtered = fallbackItems.filter(
             d => d.userId === req.user!.id
           );
           return res.status(200).json({
-            devices: filtered.map(d => ({
-              id: d.id,
-              label: d.label,
-              scopes: d.scopes,
-              lastSeenAt: d.lastSeenAt,
-              expiresAt: d.expiresAt,
-              revoked: d.revoked,
-              createdAt: d.created,
-            })),
+            devices: mapDeviceItems(filtered),
             pagination: {
               page,
               perPage,
@@ -259,20 +271,10 @@ router.get('/', requireUser, async (req: Request, res: Response) => {
       throw err;
     }
 
-    const result = (devices as unknown as Record<string, unknown>[]).map(d => ({
-      id: d.id,
-      label: d.label,
-      scopes: d.scopes,
-      lastSeenAt: d.lastSeenAt,
-      expiresAt: d.expiresAt,
-      revoked: d.revoked,
-      // PocketBase's canonical created timestamp — PB uses `created`, not
-      // `createdAt`, so surface it under the client-side name explicitly.
-      createdAt: d.created,
-    }));
+    const items = (devices as unknown as { items?: Record<string, unknown>[] }).items ?? [];
 
     return res.status(200).json({
-      devices: result,
+      devices: mapDeviceItems(items),
       pagination: {
         page: devices.page,
         perPage: devices.perPage,

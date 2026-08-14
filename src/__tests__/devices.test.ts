@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pbUnavailable, PAIRING_UNAVAILABLE } from '../routes/devices.js';
+import { pbUnavailable, PAIRING_UNAVAILABLE, mapDeviceItems } from '../routes/devices.js';
 
 describe('devices route resilience', () => {
   it('maps a missing collection (PB 404) to 503', () => {
@@ -51,5 +51,33 @@ describe('devices route resilience', () => {
       error: 'Device pairing is temporarily unavailable',
       code: 'DEVICE_PAIRING_UNAVAILABLE',
     });
+  });
+});
+
+describe('mapDeviceItems (GET /devices regression)', () => {
+  it('maps a PocketBase ListResult items array to the client device shape', () => {
+    // Regression: the first shipping of GET /devices cast the whole
+    // ListResult object ({ items, page, perPage, totalItems, totalPages })
+    // to an array and called .map directly — `devices.map is not a function`
+    // 500'd the dashboard panel in production the moment PB auth worked.
+    const listResult = {
+      items: [
+        { id: 'dev1', label: 'phone', scopes: ['relay:chat'], lastSeenAt: '2026-08-14T00:00:00Z', expiresAt: '2026-08-20T00:00:00Z', revoked: false, created: '2026-08-13T00:00:00Z' },
+        { id: 'dev2', label: 'laptop', scopes: [], lastSeenAt: null, expiresAt: null, revoked: true, created: '2026-08-12T00:00:00Z' },
+      ],
+      page: 1,
+      perPage: 20,
+      totalItems: 2,
+      totalPages: 1,
+    };
+
+    expect(mapDeviceItems(listResult.items)).toEqual([
+      { id: 'dev1', label: 'phone', scopes: ['relay:chat'], lastSeenAt: '2026-08-14T00:00:00Z', expiresAt: '2026-08-20T00:00:00Z', revoked: false, createdAt: '2026-08-13T00:00:00Z' },
+      { id: 'dev2', label: 'laptop', scopes: [], lastSeenAt: null, expiresAt: null, revoked: true, createdAt: '2026-08-12T00:00:00Z' },
+    ]);
+  });
+
+  it('returns an empty array for a missing items property (never crashes the panel)', () => {
+    expect(mapDeviceItems(undefined as unknown as Record<string, unknown>[])).toEqual([]);
   });
 });
