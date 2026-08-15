@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { describe, it, expect, beforeEach } from 'vitest';
 
-const scrubSrc = readFileSync(new URL('../scrub-beacon.js', import.meta.url), 'utf8');
+const scrubSrc = readFileSync(new URL('../scrub-beacon-v2.js', import.meta.url), 'utf8');
 
 function freshScrubber() {
   const sandbox = {};

@@ -31,6 +31,17 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
+    # ── Service worker / scrubber — MUST NEVER be cached ────────────
+    # Cloudflare caches origin responses (max-age shown to it), and SW
+    # updates go through the CDN. A stale sw.js (old bytecode, missing
+    # header fixes) is served even on no-cache requests. Force origin
+    # revalidation so browsers always fetch the newest SW on update.
+    location ~ ^/(sw|scrub-beacon)(?:-v[0-9]+)?\.js$ {
+        default_type application/javascript;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        try_files $uri =404;
+    }
+
     # ── SPA fallback — every other path gets index.html ───────────────
     location / {
         try_files $uri $uri/ /index.html;

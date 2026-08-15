@@ -23,7 +23,7 @@ initSky();
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     if (!location.protocol.startsWith('http')) return;
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+    navigator.serviceWorker.register('/sw-v2.js').catch((err) => {
       // Non-fatal: the beacon stays harmless (single console line) if SW
       // registration is refused (private mode, unsupported browser).
       console.warn('SW registration skipped:', err && err.message);
