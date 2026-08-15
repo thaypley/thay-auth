@@ -11,6 +11,15 @@ self.importScripts('/scrub-beacon.js');
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
+function headersForScrubbedResponse(res) {
+  const headers = new Headers(res.headers);
+  // The body is now re-encoded text: the original Content-Encoding (gzip/br)
+  // and Content-Length refer to the wire bytes, not this Response's bytes.
+  headers.delete('content-encoding');
+  headers.delete('content-length');
+  return headers;
+}
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET' || req.mode !== 'navigate') return;
@@ -25,7 +34,7 @@ self.addEventListener('fetch', (event) => {
         return new Response(cleaned, {
           status: res.status,
           statusText: res.statusText,
-          headers: res.headers,
+          headers: headersForScrubbedResponse(res),
         });
       });
     })
