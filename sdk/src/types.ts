@@ -115,3 +115,20 @@ export interface WaitlistData {
 }
 
 export type AuthStateListener = (user: ThayUser | null) => void;
+// ─── Entitlements (base membership + app add-ons) ────────────────────
+// Mirrors GET /auth/entitlements on thay-auth. architect implies an
+// active base — god-mode accounts bypass every gate.
+
+export interface EntitlementStatus {
+  status: 'active' | 'trialing' | 'past_due' | 'none';
+  trialEnd?: string;
+  currentPeriodEnd?: string;
+  trialDaysLeft?: number;
+  source?: 'subscription' | 'legacy_tier';
+}
+
+export interface Entitlements {
+  architect: boolean;
+  base: EntitlementStatus;
+  apps: Record<string, EntitlementStatus>;
+}

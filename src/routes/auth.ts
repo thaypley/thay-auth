@@ -28,6 +28,11 @@ import { metrics } from '../utils/metrics.js';
 import { rateLimit } from '../utils/rateLimit.js';
 import { hashToken } from '../utils/hashToken.js';
 import { normalizeApp } from '../utils/apps.js';
+import {
+  BASE_TRIAL_DAYS,
+  isValidAppKey,
+  summarizeEntitlements,
+} from '../utils/entitlements.js';
 import { BoundedQueue } from '../utils/asyncQueue.js';
 import {
   validateEmail, validatePassword, validateUsername,
@@ -1295,7 +1300,40 @@ router.post('/subscription/checkout', requireUser, async (req: Request, res: Res
     const pb = await getAdminPb();
     const userId = req.user!.id;
     const user = await getUserData(pb, userId);
-    const targetTier = String((req.body as { tier?: string })?.tier || '').toLowerCase();
+    const body = req.body as { tier?: string; target?: string };
+
+    // Membership path: target = 'base' ($5/mo thaypley.com) or
+    // 'app:<slug>' (à-la-carte family add-on).
+    const target = String(body.target || '');
+    if (target === 'base' || target.startsWith('app:')) {
+      if (target.startsWith('app:') && !isValidAppKey(target.slice(4))) {
+        return res.status(400).json({ error: 'Invalid app key' });
+      }
+      const email = (user.email as string) || '';
+      const result = await createCheckoutSession({
+        userId,
+        email,
+        tier: '',
+        target: target as 'base' | `app:${string}`,
+        successUrl: `${config.appBaseUrl}/#/billing?checkout=success&target=${encodeURIComponent(target)}`,
+        cancelUrl: `${config.appBaseUrl}/#/billing?checkout=cancelled`,
+      });
+      // Mark intent on the row now; the webhook completes it. If the row
+      // never activates, entitlement reads stay 'none' — incomplete never
+      // passes a gate.
+      await upsertSubscriptionRow(pb, {
+        userId,
+        kind: target === 'base' ? 'base' : 'app',
+        appKey: target === 'base' ? '' : target.slice(4),
+        status: 'incomplete',
+        stripeCustomerId: (user.stripe_customer_id as string) || '',
+      });
+      invalidateUserCache(userId);
+      return res.status(200).json({ url: result.url, mode: result.mode, sessionId: result.sessionId });
+    }
+
+    // Legacy ladder path.
+    const targetTier = String(body.tier || '').toLowerCase();
     if (!SUBSCRIPTION_TIERS.includes(targetTier as SubscriptionTier)) {
       return res.status(400).json({ error: 'Invalid tier' });
     }
@@ -1370,6 +1408,131 @@ router.post('/subscription/cancel', requireUser, async (req: Request, res: Respo
   }
 });
 
+// ─── Membership: base paywall + app add-ons (2026-08 pivot) ─────────
+// $5/mo base membership gates thaypley.com (14-day trial first); app
+// add-ons unlock other thay apps à la carte. Architects bypass every
+// gate. The `subscriptions` collection is canonical; users.tier is read
+// transitionally until the legacy ladder retires.
+
+const trialLimit = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, keyPrefix: 'auth-trial' });
+
+async function getSubscriptionRows(
+  pb: Awaited<ReturnType<typeof getAdminPb>>,
+  userId: string,
+): Promise<Record<string, unknown>[]> {
+  const list = await safeList(pb, 'membership_subscriptions', 1, 100, {
+    filter: `userId="${escapePbFilterValue(userId)}"`,
+  });
+  return list.items as unknown as Record<string, unknown>[];
+}
+
+type SubscriptionWrite = {
+  userId: string;
+  kind: 'base' | 'app';
+  appKey?: string;
+  status?: string;
+  trialEnd?: string;
+  currentPeriodEnd?: string;
+  stripeCustomerId?: string;
+  stripeSubscriptionId?: string;
+};
+
+async function upsertSubscriptionRow(pb: Awaited<ReturnType<typeof getAdminPb>>, w: SubscriptionWrite): Promise<void> {
+  const appKey = w.appKey || '';
+  const filter = `userId="${escapePbFilterValue(w.userId)}" && kind="${w.kind}" && appKey="${escapePbFilterValue(appKey)}"`;
+  const existing = await safeList(pb, 'membership_subscriptions', 1, 1, { filter });
+  const fields: Record<string, string> = {};
+  if (w.status !== undefined) fields.status = w.status;
+  if (w.trialEnd !== undefined) fields.trialEnd = w.trialEnd;
+  if (w.currentPeriodEnd !== undefined) fields.currentPeriodEnd = w.currentPeriodEnd;
+  if (w.stripeCustomerId !== undefined) fields.stripeCustomerId = w.stripeCustomerId;
+  if (w.stripeSubscriptionId !== undefined) fields.stripeSubscriptionId = w.stripeSubscriptionId;
+  if (Object.keys(fields).length === 0) return;
+  if (existing.items.length) {
+    const id = (existing.items[0] as { id: string }).id;
+    await pb.collection('membership_subscriptions').update(id, fields).catch((err) => {
+      logger.error('subscriptions upsert update failed', { userId: w.userId, err: String(err) });
+    });
+  } else {
+    await pb.collection('membership_subscriptions').create({
+      userId: w.userId,
+      kind: w.kind,
+      appKey,
+      ...fields,
+    }).catch((err) => {
+      logger.error('subscriptions upsert create failed', { userId: w.userId, err: String(err) });
+    });
+  }
+}
+
+function mapStripeSubStatus(status: string): string {
+  switch (status) {
+    case 'active': return 'active';
+    case 'trialing': return 'trialing';
+    case 'past_due':
+    case 'unpaid': return 'past_due';
+    case 'canceled': return 'canceled';
+    default: return 'incomplete';
+  }
+}
+
+// THE entitlement read: every thay app (and the thaypley.com gate) calls
+// this. Server-computed from subscriptions rows — clients never cache
+// entitlement truth locally.
+router.get('/entitlements', requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+    const rows = await getSubscriptionRows(pb, userId);
+    const entitlements = summarizeEntitlements(rows, {
+      isArchitect: Boolean(user.isArchitect),
+      legacyTier: String(user.tier || 'free'),
+    });
+    return res.status(200).json(entitlements);
+  } catch (err) {
+    logger.error('/entitlements GET error:', err);
+    return res.status(500).json({ error: 'Failed to fetch entitlements' });
+  }
+});
+
+// Idempotent trial start — the dotcom gate calls this on a member's first
+// gated visit. One base row per user forever: re-invocations report the
+// existing state instead of restarting the clock.
+router.post('/subscription/start-trial', trialLimit, requireUser, async (req: Request, res: Response) => {
+  try {
+    const pb = await getAdminPb();
+    const userId = req.user!.id;
+    const user = await getUserData(pb, userId);
+
+    if (user.isArchitect) {
+      return res.status(200).json({ ok: true, architect: true, entitlements: { architect: true, base: { status: 'active' }, apps: {} } });
+    }
+
+    const legacyTier = String(user.tier || 'free');
+    const rows = await getSubscriptionRows(pb, userId);
+    const existing = summarizeEntitlements(rows, { legacyTier });
+    if (existing.base.status !== 'none') {
+      return res.status(200).json({ ok: true, alreadyStarted: true, entitlements: existing });
+    }
+
+    const trialEnd = new Date(Date.now() + BASE_TRIAL_DAYS * 86_400_000).toISOString();
+    await upsertSubscriptionRow(pb, { userId, kind: 'base', appKey: '', status: 'trialing', trialEnd });
+    logger.info('Base trial started', { userId, trialEnd });
+    return res.status(200).json({
+      ok: true,
+      entitlements: {
+        architect: false,
+        base: { status: 'trialing', trialEnd, trialDaysLeft: BASE_TRIAL_DAYS, source: 'subscription' },
+        apps: {},
+      },
+    });
+  } catch (err) {
+    logger.error('/subscription/start-trial POST error:', err);
+    return res.status(500).json({ error: 'Failed to start trial' });
+  }
+});
+
 // Stripe webhook — raw body (mounted before express.json in index.ts).
 // Reconciles checkout completion / subscription lifecycle / entitlement
 // grants without the client in the loop.
@@ -1380,14 +1543,33 @@ router.post('/webhook', async (req: Request, res: Response) => {
     if (!raw.length) return res.status(400).json({ error: 'Empty webhook body' });
     const signature = String(req.headers['stripe-signature'] || '');
     const events = await verifyWebhook(raw, signature);
-    for (const ev of events as Array<{ type?: string; data?: { object?: Record<string, unknown> } }>) {
+    for (const ev of events as Array<{ type?: string; id?: string; data?: { object?: Record<string, unknown> } }>) {
       const type = String(ev.type || '');
       const data = (ev.data?.object || {}) as Record<string, any>;
+      const eventId = String(ev.id || '');
+      const pb = await getAdminPb();
+      if (eventId) {
+        // Idempotency ledger — Stripe retries aggressively; a replayed event
+        // must never re-apply an entitlement mutation. Unique index on
+        // eventId makes the create fail on the second delivery. A ledger
+        // FAILURE (missing collection, PB down) must not silently disable
+        // billing: check whether it's a true duplicate, and otherwise log
+        // loudly + process anyway — the mutations are idempotent upserts
+        // keyed on (userId, kind, appKey).
+        try {
+          await pb.collection('billing_webhook_events').create({ eventId, eventType: type.slice(0, 120) });
+        } catch (err) {
+          const seen = await safeList(pb, 'billing_webhook_events', 1, 1, {
+            filter: `eventId="${escapePbFilterValue(eventId)}"`,
+          }).catch(() => ({ items: [] as unknown[] }));
+          if (seen.items.length) continue; // true duplicate — skip
+          logger.error('billing ledger write failed — processing without idempotency guard', { eventId, type, err: String(err) });
+        }
+      }
       const userId = String(data.client_reference_id || '')
         || String(data.metadata?.userId || '')
         || String(data.customer_metadata?.userId || '');
       if (!userId) continue;
-      const pb = await getAdminPb();
       let user: Record<string, unknown>;
       try {
         user = await getUserData(pb, userId);
@@ -1395,7 +1577,48 @@ router.post('/webhook', async (req: Request, res: Response) => {
         logger.warn('Webhook referenced unknown user', { userId });
         continue;
       }
-      if (type === 'checkout.session.completed' || type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
+      // Membership events (plan=base|app from checkout metadata) reconcile
+      // `subscriptions` rows; legacy ladder events keep the users.tier path.
+      // The two must not cross: a base purchase never grants a legacy tier.
+      const plan = String(data.metadata?.plan || '');
+      const appKey = String(data.metadata?.appKey || '');
+      if (plan === 'base' || plan === 'app') {
+        const kind = plan === 'base' ? 'base' as const : 'app' as const;
+        const key = kind === 'base' ? '' : appKey;
+        if (type === 'checkout.session.completed') {
+          await upsertSubscriptionRow(pb, {
+            userId, kind, appKey: key,
+            status: 'active',
+            trialEnd: '',
+            stripeCustomerId: String(data.customer || ''),
+            stripeSubscriptionId: String(data.subscription || ''),
+          });
+          if (data.customer) {
+            await pb.collection('users').update(userId, { stripe_customer_id: String(data.customer) }).catch(() => undefined);
+          }
+          invalidateUserCache(userId);
+          logger.info('Webhook activated membership', { userId, plan, appKey: key });
+        } else if (type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
+          const status = mapStripeSubStatus(String(data.status || 'active'));
+          const periodEnd = data.current_period_end
+            ? new Date(Number(data.current_period_end) * 1000).toISOString()
+            : '';
+          await upsertSubscriptionRow(pb, {
+            userId, kind, appKey: key,
+            status,
+            currentPeriodEnd: periodEnd,
+            stripeCustomerId: String(data.customer || ''),
+            stripeSubscriptionId: String(data.id || ''),
+          });
+          invalidateUserCache(userId);
+        } else if (type === 'customer.subscription.deleted') {
+          await upsertSubscriptionRow(pb, { userId, kind, appKey: key, status: 'canceled' });
+          invalidateUserCache(userId);
+          logger.info('Webhook canceled membership', { userId, plan, appKey: key });
+        } else if (type === 'checkout.session.expired') {
+          await upsertSubscriptionRow(pb, { userId, kind, appKey: key, status: 'canceled' });
+        }
+      } else if (type === 'checkout.session.completed' || type === 'customer.subscription.created' || type === 'customer.subscription.updated') {
         const tier = String(data.metadata?.tier || user.pending_tier || 'pro');
         const subId = String(data.subscription || data.id || user.stripe_subscription_id || '');
         const customerId = String(data.customer || user.stripe_customer_id || '');

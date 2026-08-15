@@ -2,12 +2,13 @@ import type {
   ThayUser, UserProfile, AuthSession, DevicePairing, Device,
   Session, SignupData, UserApp, ProfileUpdateData,
   AuthStateListener, PlatformInfo, Invite, CreateInviteOptions,
+  Entitlements,
 } from './types.js';
 
 export type {
   ThayUser, UserProfile, AuthSession, DevicePairing, Device,
   Session, SignupData, UserApp, ProfileUpdateData,
-  PlatformInfo, Invite, CreateInviteOptions,
+  PlatformInfo, Invite, CreateInviteOptions, Entitlements,
 };
 
 export class ThayAuth {
@@ -258,6 +259,62 @@ export class ThayAuth {
   }>> {
     const data = await this.request<{ apps: Array<{ slug: string; displayName: string; tagline?: string; description?: string; iconUrl?: string; isFree?: boolean; price?: string; version?: string; kind?: string; downloads: Record<string, string> }> }>('/auth/catalog');
     return data.apps;
+  }
+
+  // ─── Entitlements (base membership + app add-ons) ─────────────────
+  // Server truth only — never cached to localStorage by callers. The
+  // in-memory TTL below is a request-coalescing courtesy, not a grant.
+
+  private entitlementsCache: { data: Entitlements; fetchedAt: number } | null = null;
+  private static ENTITLEMENTS_TTL_MS = 60_000;
+
+  async getEntitlements(opts: { fresh?: boolean } = {}): Promise<Entitlements> {
+    if (
+      !opts.fresh &&
+      this.entitlementsCache &&
+      Date.now() - this.entitlementsCache.fetchedAt < ThayAuth.ENTITLEMENTS_TTL_MS
+    ) {
+      return this.entitlementsCache.data;
+    }
+    const data = await this.request<Entitlements>('/auth/entitlements');
+    this.entitlementsCache = { data, fetchedAt: Date.now() };
+    return data;
+  }
+
+  /**
+   * Gate verdict for thaypley.com: resolves when the account is an
+   * architect, holds an active base membership, or is mid-trial. Rejects
+   * with the entitlement snapshot attached (err.entitlements) so callers
+   * can render trialDaysLeft / past_due states at the wall.
+   */
+  async requireBase(): Promise<Entitlements> {
+    const e = await this.getEntitlements({ fresh: true });
+    if (e.architect || e.base.status === 'active' || e.base.status === 'trialing') return e;
+    throw Object.assign(new Error('Base membership required'), { entitlements: e });
+  }
+
+  async startBaseTrial(): Promise<{ ok: boolean; architect?: boolean; alreadyStarted?: boolean; entitlements: Entitlements }> {
+    const result = await this.request<{ ok: boolean; architect?: boolean; alreadyStarted?: boolean; entitlements: Entitlements }>('/auth/subscription/start-trial', {
+      method: 'POST',
+    });
+    if (result.entitlements) {
+      this.entitlementsCache = { data: result.entitlements, fetchedAt: Date.now() };
+    }
+    return result;
+  }
+
+  async checkoutMembership(target: 'base' | `app:${string}`): Promise<{ url: string; mode: string; sessionId: string }> {
+    return this.request('/auth/subscription/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ target }),
+    });
+  }
+
+  async openBillingPortal(returnUrl?: string): Promise<{ url: string; mode: string }> {
+    return this.request('/auth/subscription/portal', {
+      method: 'POST',
+      body: JSON.stringify({ returnUrl }),
+    });
   }
 
   // ─── Devices ───────────────────────────────────────────────────────

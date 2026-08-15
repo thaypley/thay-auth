@@ -30,9 +30,13 @@ ssh "${REMOTE}" "set -euo pipefail
   cd ${APP_DIR}
   echo '→ git pull'
   git pull --ff-only origin main
-  echo '→ sync pb_hooks to PocketBase hooks dir'
+  echo '→ sync pb_hooks to PocketBase hooks dir (ADDITIVE)'
+  # 2026-08-15: this hooks dir is SHARED with the thaypley dotcom deploy,
+  # whose repo carries 8 hooks while this repo carries 1 — a --delete here
+  # wiped the other 7 live hooks on manual deploys. Additive-only until one
+  # repo is a verified superset (same doctrine as the dotcom deploy script).
   mkdir -p ${PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}
-  rsync -a --delete --exclude '*.bak' pb_hooks/ ${PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}/
+  rsync -a --exclude '*.bak' pb_hooks/ ${PB_HOOKS_DIR:-/home/thaypley/pocketbase/pb_hooks}/
   echo '→ chown PB data dir to in-container node uid (1000)'
   chown -R 1000:1000 ${PB_DATA_DIR}
   echo '→ docker compose build'

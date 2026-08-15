@@ -16,11 +16,14 @@ import { logger } from '../utils/logger.js';
 const STRIPE_API = 'https://api.stripe.com/v1';
 
 /**
- * Maps a thay-sub tier to a Stripe price ID. Configurable via env so the
+ * Maps a checkout target to a Stripe price ID. Configurable via env so the
  * VPS deployment can point at live plan IDs without a code change.
+ *
+ * Targets: legacy tiers (core/plus/pro/enterprise), 'base' ($5/mo
+ * thaypley.com membership), or an app add-on ('app:<slug>').
  */
-function priceIdFor(tier: string, _isAnnual: boolean): string {
-  const envId = process.env[`STRIPE_PRICE_${tier.toUpperCase().replace(/-/g, '_')}`];
+function priceIdFor(target: string, _isAnnual: boolean): string {
+  const envId = process.env[`STRIPE_PRICE_${target.toUpperCase().replace(/-/g, '_').replace(/:/g, '_')}`];
   if (envId) return envId;
   // Defaults match the published plan grid (USD/mo). In mock mode these
   // are ignored; in prod, set STRIPE_PRICE_* explicitly at deploy.
@@ -29,8 +32,13 @@ function priceIdFor(tier: string, _isAnnual: boolean): string {
     plus: 'price_thay_plus',
     pro: 'price_thay_pro',
     enterprise: 'price_thay_ent',
+    base: 'price_thay_base',
   };
-  return defaults[tier] || '';
+  if (target.startsWith('app:')) {
+    // App add-on prices have no stable default — must be configured.
+    return defaults[target] || '';
+  }
+  return defaults[target] || '';
 }
 
 export function billingConfigured(): boolean {
@@ -75,7 +83,14 @@ async function stripeFetch(path: string, form?: Record<string, string | number |
 export interface CheckoutInput {
   userId: string;
   email: string;
+  /** Legacy ladder tier (core/plus/pro/enterprise) — legacy path. */
   tier: string;
+  /**
+   * New membership model: 'base' for the $5/mo thaypley.com membership,
+   * or 'app:<slug>' for an à-la-carte app add-on. Takes precedence over
+   * `tier` when set.
+   */
+  target?: 'base' | `app:${string}`;
   successUrl: string;
   cancelUrl: string;
 }
@@ -87,20 +102,28 @@ export interface CheckoutResult {
 }
 
 export async function createCheckoutSession(input: CheckoutInput): Promise<CheckoutResult> {
+  const target = input.target || input.tier;
   if (!billingConfigured()) {
-    logger.info('Billing mock mode: checkout stub for', { userId: input.userId, tier: input.tier });
+    logger.info('Billing mock mode: checkout stub for', { userId: input.userId, target });
     // Deterministic mock session id so tests/UI can assert the contract.
     const sessionId = `mock_cs_${input.userId.slice(0, 8)}_${Date.now().toString(36)}`;
-    return { url: `${config.appBaseUrl}/#/billing?mock_checkout=${sessionId}&tier=${encodeURIComponent(input.tier)}`, mode: 'mock', sessionId };
+    return { url: `${config.appBaseUrl}/#/billing?mock_checkout=${sessionId}&target=${encodeURIComponent(target)}`, mode: 'mock', sessionId };
   }
-  const price = priceIdFor(input.tier, false);
-  if (!price) throw new Error(`No Stripe price configured for tier ${input.tier}`);
+  const price = priceIdFor(target, false);
+  if (!price) throw new Error(`No Stripe price configured for ${target} (set STRIPE_PRICE_${target.toUpperCase().replace(/-/g, '_').replace(/:/g, '_')})`);
+  const metadata = {
+    userId: input.userId,
+    // 'base' | 'app' | 'tier' — how the webhook picks the row to upsert.
+    plan: input.target ? input.target.split(':')[0] : 'tier',
+    appKey: input.target?.startsWith('app:') ? input.target.slice(4) : '',
+    tier: input.target ? '' : input.tier,
+  };
   const data = await stripeFetch('/checkout/sessions', {
     mode: 'subscription',
     customer_email: input.email,
     line_items: `[{"price":"${price}","quantity":1}]`,
-    subscription_data: JSON.stringify({ metadata: { userId: input.userId, tier: input.tier } }),
-    metadata: JSON.stringify({ userId: input.userId, tier: input.tier }),
+    subscription_data: JSON.stringify({ metadata }),
+    metadata: JSON.stringify(metadata),
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
     client_reference_id: input.userId,
