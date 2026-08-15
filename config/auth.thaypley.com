@@ -42,8 +42,11 @@ server {
         try_files $uri =404;
     }
 
-    # ── SPA fallback — every other path gets index.html ───────────────
+    # ── SPA fallback — every other path gets index.html. HTML is the
+    # bootstrap pointing at hashed bundles + the service worker: it must
+    # never be served stale, or clients keep the old bundle/SW forever.
     location / {
+        add_header Cache-Control "no-cache";
         try_files $uri $uri/ /index.html;
     }
 
