@@ -14,6 +14,23 @@ import { initSky } from './utils/sky.js';
 initVibe();
 initSky();
 
+// ─── Service worker: scrub Cloudflare's edge-injected analytics beacon ───
+// The beacon (<script data-cf-beacon> → static.cloudflareinsights.com) is
+// injected by Cloudflare at the edge, not by this origin. Client ad blockers
+// cancel it with ERR_BLOCKED_BY_CLIENT, and disabling Web Analytics is not
+// available on this account tier. The SW strips the injected tag from every
+// navigation response, so the browser never even creates the request.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    if (!location.protocol.startsWith('http')) return;
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      // Non-fatal: the beacon stays harmless (single console line) if SW
+      // registration is refused (private mode, unsupported browser).
+      console.warn('SW registration skipped:', err && err.message);
+    });
+  });
+}
+
 // Lazy load pages — each returns an async page fn that loads the chunk,
 // then renders into the container (previously the loaded fn was never called).
 const lazy = (load) => async (...args) => (await load()).default(...args);
@@ -120,7 +137,6 @@ route('/billing', async (container) => {
   await BillingPage(container);
 });
 
-// Settings — vibe themes + account management.
 route('/settings', async (container) => {
   if (!hasToken()) {
     const { navigate } = await import('./router.js');
@@ -130,25 +146,11 @@ route('/settings', async (container) => {
   await SettingsPage(container);
 });
 
-route('/404', async (container) => {
+route('/forgot-password/:x', async () => {});
+
+// SPA catch-all.
+route('*', async (container) => {
   await NotFoundPage(container);
 });
 
-// ─── Start ───────────────────────────────────────────────────────
-
 initRouter();
-
-// Auto-refresh session on boot if token exists
-if (hasToken()) {
-  const auth = (await import('./sdk.js')).default;
-  import('./store.js').then(async ({ setState }) => {
-    try {
-      const result = await auth.refreshSession();
-      setState({ user: result.user });
-    } catch {
-      // Token expired, clear
-      const { clearToken } = await import('./sdk.js');
-      clearToken();
-    }
-  });
-}
