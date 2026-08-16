@@ -1708,6 +1708,9 @@ router.post('/subscription/start-trial', trialLimit, requireUser, async (req: Re
         architect: false,
         base: { status: 'trialing', trialEnd, trialDaysLeft: BASE_TRIAL_DAYS, source: 'subscription' },
         apps: {},
+        // The trial is the free test point — spread across all platforms
+        // and apps for the trial window.
+        trialCoversAll: true,
       },
     });
   } catch (err) {

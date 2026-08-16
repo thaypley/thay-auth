@@ -282,10 +282,13 @@ export class ThayAuth {
   }
 
   /**
-   * Gate verdict for thaypley.com: resolves when the account is an
-   * architect, holds an active base membership, or is mid-trial. Rejects
-   * with the entitlement snapshot attached (err.entitlements) so callers
-   * can render trialDaysLeft / past_due states at the wall.
+   * Gate verdict for thaypley.com — and every platform, mid-trial.
+   * Resolves when the account is an architect, holds an active base
+   * membership, or is mid-trial. The 14-day trial is the free test
+   * point and spreads across ALL platforms and apps (see
+   * entitlements.trialCoversAll). Rejects with the entitlement snapshot
+   * attached (err.entitlements) so callers can render trialDaysLeft /
+   * past_due states at the wall.
    */
   async requireBase(): Promise<Entitlements> {
     const e = await this.getEntitlements({ fresh: true });
@@ -293,6 +296,12 @@ export class ThayAuth {
     throw Object.assign(new Error('Base membership required'), { entitlements: e });
   }
 
+  /**
+   * One 14-day trial per account, forever. Starts the free test point,
+   * which unlocks every platform AND every app for the trial window
+   * (entitlements.trialCoversAll). Re-invocation reports the existing
+   * state instead of restarting the clock.
+   */
   async startBaseTrial(): Promise<{ ok: boolean; architect?: boolean; alreadyStarted?: boolean; entitlements: Entitlements }> {
     const result = await this.request<{ ok: boolean; architect?: boolean; alreadyStarted?: boolean; entitlements: Entitlements }>('/auth/subscription/start-trial', {
       method: 'POST',

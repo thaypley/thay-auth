@@ -46,6 +46,24 @@ describe('summarizeEntitlements', () => {
     expect(baseEntitled(eExp)).toBe(false);
   });
 
+  it('the 14-day trial is the free test point — it spreads across ALL platforms AND apps', () => {
+    const live: SubscriptionRow[] = [{ kind: 'base', status: 'trialing', trialEnd: inDays(10) }];
+    const e = summarizeEntitlements(live, { legacyTier: 'free', now: NOW });
+    expect(e.trialCoversAll).toBe(true);
+    expect(baseEntitled(e)).toBe(true);
+    expect(appEntitled(e, 'tunes')).toBe(true);
+    expect(appEntitled(e, 'tv')).toBe(true);
+    expect(appEntitled(e, 'studio')).toBe(true);
+    expect(Object.keys(e.apps)).toEqual([]);
+
+    // Once the trial ends, add-on gates return — nothing is unlocked.
+    const expired: SubscriptionRow[] = [{ kind: 'base', status: 'trialing', trialEnd: inDays(-1) }];
+    const eExp = summarizeEntitlements(expired, { legacyTier: 'free', now: NOW });
+    expect(eExp.trialCoversAll).toBeUndefined();
+    expect(baseEntitled(eExp)).toBe(false);
+    expect(appEntitled(eExp, 'tunes')).toBe(false);
+  });
+
   it('trial ending today still has hours left', () => {
     const rows: SubscriptionRow[] = [{ kind: 'base', status: 'trialing', trialEnd: new Date(NOW + 3_600_000).toISOString() }];
     const e = summarizeEntitlements(rows, { legacyTier: 'free', now: NOW });
@@ -100,11 +118,12 @@ describe('summarizeEntitlements', () => {
     expect(Object.keys(e.apps)).toEqual(['tunes']);
   });
 
-  it('base membership alone does not unlock app add-ons', () => {
+  it('active base membership alone does not unlock app add-ons', () => {
     const rows: SubscriptionRow[] = [{ kind: 'base', status: 'active' }];
     const e = summarizeEntitlements(rows, { legacyTier: 'free', now: NOW });
     expect(baseEntitled(e)).toBe(true);
     expect(appEntitled(e, 'tunes')).toBe(false);
+    expect(e.trialCoversAll).toBeUndefined();
   });
 
   it('app rows without an appKey are ignored', () => {

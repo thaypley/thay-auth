@@ -6,6 +6,10 @@
  *   - architect accounts: god-mode, bypass every gate.
  *   - base membership ($5/mo, 14-day trial first) gates thaypley.com.
  *   - app add-ons (à la carte, per catalog slug) unlock other thay apps.
+ *   - the 14-day base trial is the FREE TEST POINT — it spreads across
+ *     every platform AND every app: a trialing account unlocks the whole
+ *     family for the trial window, then the per-platform/per-app gates
+ *     take over (trialCoversAll pinpoints this for clients).
  *   - legacy users.tier != 'free' counts as an active base membership
  *     transitionally, until the old ladder is retired — no backfill.
  *
@@ -38,6 +42,12 @@ export interface Entitlements {
   architect: boolean;
   base: EntitlementStatus;
   apps: Record<string, EntitlementStatus>;
+  /**
+   * true while the account is mid-trial: the 14-day free test spreads
+   * across every platform AND every app — clients may render the whole
+   * family unlocked without enumerating app rows.
+   */
+  trialCoversAll?: boolean;
 }
 
 function isActiveOrTrialing(status: string, now: number, row: SubscriptionRow): boolean {
@@ -107,7 +117,14 @@ export function summarizeEntitlements(
     }
   }
 
-  return { architect, base, apps };
+  return {
+    architect,
+    base,
+    apps,
+    // The 14-day trial is the free test point — every platform/app is
+    // unlocked for the trial window, not just the base gate.
+    ...(base.status === 'trialing' ? { trialCoversAll: true } : {}),
+  };
 }
 
 /**
@@ -129,6 +146,9 @@ export function baseEntitled(e: Entitlements): boolean {
 /** Verdict for an à-la-carte app add-on. */
 export function appEntitled(e: Entitlements, appKey: string): boolean {
   if (e.architect) return true;
+  // Mid-trial: the free test unlocks the whole family — every app is
+  // entitled until the trial ends, then per-app add-ons take over.
+  if (e.base.status === 'trialing') return true;
   const app = e.apps[appKey];
   return Boolean(app && (app.status === 'active' || app.status === 'trialing'));
 }

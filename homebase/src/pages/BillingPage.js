@@ -126,9 +126,12 @@ export default async function BillingPage(container) {
     : isArchitect
       ? 'thay architect'
       : (plan.name || 'thay base');
-  const planBlurb = !plan
-    ? 'every surface now starts with thay base at $5/mo.'
-    : (plan.blurb || '');
+  const planBlurb =
+    plan && plan.status === 'trialing'
+      ? '14-day free test — every platform & app unlocked'
+      : !plan
+        ? 'every surface now starts with thay base at $5/mo.'
+        : (plan.blurb || '');
 
   const currentPlan = h('div', { className: 'glass-card-static billing-current' }, [
     h('div', { className: 'section-header' }, [
