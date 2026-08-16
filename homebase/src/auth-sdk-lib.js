@@ -120,10 +120,10 @@ export class ThayAuth {
             body: JSON.stringify({ token, password, passwordConfirm }),
         });
     }
-    async joinWaitlist(email, note) {
+    async joinWaitlist(email, note, source) {
         return this.request('/auth/waitlist', {
             method: 'POST',
-            body: JSON.stringify({ email, note }),
+            body: JSON.stringify({ email, note, source }),
         });
     }
     async getCatalog() {

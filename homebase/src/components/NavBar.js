@@ -11,6 +11,11 @@ import { hasToken } from '../sdk.js';
 import { navigate } from '../router.js';
 import { setState, getState } from '../store.js';
 import { mountAccountDrawer } from './AccountDrawer.js';
+import { VIBES, getVibeColor, applyVibe, loadVibe } from '../utils/vibes.js';
+
+// Module-level guard: NavBar re-renders on every navigation, so the
+// document-level popover listeners must only be registered once.
+let vibeListenersRegistered = false;
 
 export function NavBar() {
   const isLoggedIn = hasToken();
@@ -52,7 +57,73 @@ export function NavBar() {
     }, ['invites']);
   }
 
+  // ─── Vibe switcher popover ─────────────────────────────────────
+  // Compact 7-dot theme picker in the header — one click, not three.
+  // The popover closes on outside click or Escape.
+  const vibeBtn = h('button', {
+    type: 'button',
+    className: 'btn btn-ghost btn-sm navbar-vibe-btn',
+    'aria-label': 'switch vibe theme',
+    'aria-haspopup': 'true',
+    'aria-expanded': 'false',
+    onClick: (e) => {
+      e.stopPropagation();
+      const open = vibePopover.style.display === 'flex';
+      vibePopover.style.display = open ? 'none' : 'flex';
+      vibeBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    },
+  }, ['vibe']);
+
+  const vibePopover = h('div', { className: 'vibe-popover', role: 'menu', style: { display: 'none' } }, [
+    h('span', { className: 'vibe-popover-label' }, ['theme']),
+    ...VIBES.map((v) => {
+      const isActive = v === loadVibe();
+      return h('button', {
+        type: 'button',
+        className: 'vibe-dot' + (isActive ? ' active' : ''),
+        style: { background: getVibeColor(v) },
+        'aria-label': `theme: ${v}`,
+        'aria-pressed': isActive ? 'true' : 'false',
+        title: v,
+        onClick: (e) => {
+          e.stopPropagation();
+          applyVibe(v);
+          vibePopover.querySelectorAll('.vibe-dot').forEach((d) => d.classList.remove('active'));
+          e.currentTarget.classList.add('active');
+          vibePopover.style.display = 'none';
+          vibeBtn.setAttribute('aria-expanded', 'false');
+        },
+      });
+    }),
+  ]);
+
+  // Close on outside click / Escape. Registered once per session — the
+  // listeners query the live DOM so they work across re-renders.
+  if (!vibeListenersRegistered) {
+    vibeListenersRegistered = true;
+    document.addEventListener('click', (e) => {
+      const popover = document.querySelector('.vibe-popover');
+      const btn = document.querySelector('.navbar-vibe-btn');
+      if (popover && popover.style.display === 'flex' && !popover.contains(e.target) && e.target !== btn) {
+        popover.style.display = 'none';
+        btn?.setAttribute('aria-expanded', 'false');
+      }
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const popover = document.querySelector('.vibe-popover');
+        const btn = document.querySelector('.navbar-vibe-btn');
+        if (popover && popover.style.display === 'flex') {
+          popover.style.display = 'none';
+          btn?.setAttribute('aria-expanded', 'false');
+        }
+      }
+    });
+  }
+
   const end = h('div', { className: 'navbar-end' });
+  end.appendChild(vibeBtn);
+  end.appendChild(vibePopover);
   end.appendChild(platformsLink);
   end.appendChild(appsLink);
   end.appendChild(downloadsLink);

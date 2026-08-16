@@ -6,11 +6,15 @@
  * cli/cloud, thaypley(studio)) and groups by kind with the squared-edge
  * card presentation: square icon tile, full name, tagline, description,
  * price/status badge, download CTA.
+ *
+ * Apps without a real download URL render an inline waitlist capture
+ * instead of a dead "coming soon" button.
  */
 import { h, mount } from '../utils/dom.js';
 import auth from '../sdk.js';
 import { pageTransition, staggerIn } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
+import { AppCard } from '../components/AppCard.js';
 
 function pickDownloadUrl(downloads) {
   if (!downloads || typeof downloads !== 'object') return null;
@@ -35,50 +39,24 @@ const KIND_HINTS = {
   web: 'any browser',
 };
 
-// Icon tile letter — strip stylization ((tunes) → t) for the square tile.
-function tileLetter(displayName) {
-  const cleaned = String(displayName || '').replace(/[()]/g, '');
-  return (cleaned[0] || '?').toUpperCase();
-}
-
-function appCard(app) {
+// Map a backend catalog entry to the shared AppCard schema. Apps with no
+// downloadable artifact become waitlist-capture cards (status: 'soon').
+function toAppCard(app) {
   const url = pickDownloadUrl(app.downloads);
-  const hint = !url ? 'coming soon' : (app.isFree === false ? (app.price || 'paid') : 'free download');
-
-  return h('div', { className: 'catalog-card glass-card' }, [
-    h('div', { className: 'catalog-card-head' }, [
-      h('div', { className: 'app-card-icon', style: { width: '56px', height: '56px', fontSize: '24px', flexShrink: 0 } }, [
-        app.iconUrl
-          ? h('img', { src: app.iconUrl, alt: `${app.displayName} icon`, style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' } })
-          : tileLetter(app.displayName),
-      ]),
-      h('div', { className: 'catalog-card-title' }, [
-        h('div', { className: 'catalog-card-name' }, [app.displayName]),
-        app.tagline ? h('div', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
-      ]),
-    ]),
-    app.description ? h('p', { className: 'catalog-card-description' }, [app.description]) : null,
-    h('div', { className: 'catalog-card-meta' }, [
-      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
-        app.isFree === false ? (app.price || 'paid') : 'free',
-      ]),
-      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-sub)' } }, [
-        app.kind || 'web',
-      ]),
-      h('span', { className: 'input-hint', style: { marginLeft: 'auto' } }, [
-        KIND_HINTS[app.kind] || '',
-      ]),
-    ]),
-    h('div', { className: 'catalog-card-footer' }, [
-      h('button', {
-        className: 'btn btn-primary btn-sm',
-        onClick: () => {
-          if (url) window.open(url, '_blank', 'noopener');
-        },
-        disabled: !url,
-      }, [url ? 'download' : 'coming soon']),
-    ]),
-  ]);
+  return {
+    slug: app.slug || '',
+    displayName: app.displayName || app.name || 'unknown',
+    tagline: app.tagline || '',
+    description: app.description || '',
+    kind: app.kind || 'web',
+    hints: KIND_HINTS[app.kind] || '',
+    icon: app.slug || '',
+    status: url ? 'live' : 'soon',
+    cta: url ? 'download' : 'notify me',
+    url: url || undefined,
+    isFree: app.isFree,
+    price: app.price,
+  };
 }
 
 export default async function DownloadsPage(container) {
@@ -93,10 +71,19 @@ export default async function DownloadsPage(container) {
   mount(container, shell);
   pageTransition(shell.querySelector('.downloads-page'));
 
+  // ─── Skeleton shell ──────────────────────────────────────────────
+  // Paint shimmer panels immediately so the page is never a blank
+  // screen while the catalog fetch is in flight.
+  const skeleton = h('div', { 'aria-busy': 'true', style: { opacity: 0.7 } }, [
+    h('div', { className: 'glass-card-static', style: { height: '220px' } }),
+  ]);
+  body.appendChild(skeleton);
+
   let apps = [];
   try {
     apps = await auth.getCatalog();
   } catch (err) {
+    skeleton.remove();
     body.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center', gridColumn: '1 / -1' } }, [
       h('h3', {}, ['something broke']),
       h('p', { className: 'input-hint-error' }, ['could not load the catalog right now — try again shortly.']),
@@ -104,6 +91,8 @@ export default async function DownloadsPage(container) {
     ]));
     return;
   }
+
+  skeleton.remove();
 
   if (!apps.length) {
     body.appendChild(h('p', { className: 'input-hint', style: { textAlign: 'center' } }, ['no downloads published yet — check back soon.']));
@@ -118,7 +107,7 @@ export default async function DownloadsPage(container) {
     groups.push({
       kind,
       label: KIND_LABELS[kind] || kind,
-      members,
+      members: members.map(toAppCard),
     });
   }
 
@@ -128,7 +117,7 @@ export default async function DownloadsPage(container) {
         h('h3', {}, [group.label]),
         h('span', { className: 'input-hint' }, [`${group.members.length} available`]),
       ]),
-      h('div', { className: 'catalog-grid' }, group.members.map(appCard)),
+      h('div', { className: 'catalog-grid' }, group.members.map(AppCard)),
     ]);
     body.appendChild(section);
   }

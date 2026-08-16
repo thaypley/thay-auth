@@ -62,9 +62,12 @@ const VIBE_PROPS = {
     '--light-pink': '#fce4ec',
   },
   alien: {
-    '--vibe-primary': '#00cc00',
+    // Alien-green (#39ff14) is reserved for terminal surfaces only, so
+    // the vibe uses a softer phosphor green that keeps the alien mood
+    // without violating the brand rule.
+    '--vibe-primary': '#4ade80',
     '--vibe-bg': '#0a0a0a',
-    '--pink': '#00ff00',
+    '--pink': '#4ade80',
     '--yellow': '#ffff00',
     '--blue': '#00ffff',
     '--light-pink': '#003300',
@@ -78,7 +81,7 @@ const VIBE_HL = {
   spectrum: '#eef0f7',
   cosmic: '#2a1652',
   sunset: '#ffe3da',
-  alien: '#063d06',
+  alien: '#0a2a12',
 };
 
 export function getVibeColor(vibe) {

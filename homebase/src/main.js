@@ -139,6 +139,11 @@ route('/creative', async (container) => {
   await CreativePage(container);
 });
 
+// Alias: the creator entry point — "record a song" lands here.
+route('/create', async (container) => {
+  await CreativePage(container);
+});
+
 // Device management — paired devices + active sessions (auth-gated).
 route('/devices', async (container) => {
   if (!hasToken()) {

@@ -280,6 +280,9 @@ export default async function DashboardPage(container) {
     // ─── Platform Strip (quick links to the thay web family) ──────
     // Best-effort: if the directory API hiccups, the dashboard still
     // renders — links are decorative shortcuts, never load-bearing.
+    // A visible retry chip (mirroring the devices hiccup chip) keeps
+    // the failure honest instead of silently dropping the strip.
+    const platformsHiccup = platformsResult.status === 'rejected';
     const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk'].includes(p.slug));
     const platformChips = [
       ...corePlatforms.map((p) => h('a', {
@@ -290,12 +293,48 @@ export default async function DashboardPage(container) {
       }, [p.name])),
       h('a', { className: 'platform-chip platform-chip--all', href: '#/platforms' }, ['all platforms →']),
     ];
+    const platformHiccupChip = platformsHiccup
+      ? h('div', { className: 'panel-hiccup', role: 'status' }, [
+          h('span', {}, ['platforms hiccuped — show', ' retry']),
+          h('button', {
+            className: 'btn btn-ghost btn-sm',
+            onClick: () => location.reload(),
+          }, ['retry']),
+        ])
+      : null;
     const platformStrip = h('div', { className: 'glass-card-static platform-strip' }, [
       h('div', { className: 'section-header' }, [
         h('h3', {}, ['the thay universe']),
         h('span', { className: 'input-hint' }, ['one identity, every surface']),
       ]),
       h('div', { className: 'platform-chip-row' }, platformChips),
+      platformHiccupChip,
+    ]);
+
+    // ─── Creator Hero ──────────────────────────────────────────────
+    // The first thing a creator sees: a direct path into making. Every
+    // CTA routes to /creative (the studio family) — the concrete next
+    // step for "I want to record a song" even before studio ships.
+    const creatorHero = h('div', { className: 'glass-card creator-hero' }, [
+      h('div', { className: 'creator-hero-copy' }, [
+        h('h2', {}, ['make something']),
+        h('p', { className: 'subtitle' }, ['record a song, cut a video, design a brand — the studio family is where the universe gets made.']),
+      ]),
+      h('div', { className: 'creator-hero-actions' }, [
+        h('button', {
+          className: 'btn btn-primary',
+          onClick: () => navigate('/create'),
+        }, ['record a song']),
+        h('button', {
+          className: 'btn btn-secondary',
+          onClick: () => navigate('/create'),
+        }, ['cut a video']),
+        h('button', {
+          className: 'btn btn-ghost',
+          onClick: () => navigate('/create'),
+        }, ['design a brand']),
+        h('a', { className: 'right-panel-link', href: '#/creative' }, ['browse the creative family →']),
+      ]),
     ]);
 
     // ─── Layout ────────────────────────────────────────────────────
@@ -303,7 +342,7 @@ export default async function DashboardPage(container) {
     const leftPanel = h('div', { className: 'dashboard-panel' }, [profileCard]);
     const rightPanel = h('div', { className: 'dashboard-panel' }, [platformStrip, appsSection, devicesSection]);
 
-    const grid = h('div', { className: 'dashboard-grid fade-in' }, [leftPanel, rightPanel]);
+    const grid = h('div', { className: 'dashboard-grid fade-in' }, [creatorHero, leftPanel, rightPanel]);
     const dashboard = h('div', { className: 'dashboard' }, [grid]);
 
     const shell = h('div', {}, [NavBar(), dashboard]);
@@ -312,6 +351,61 @@ export default async function DashboardPage(container) {
     // Animations
     pageTransition(grid);
     setTimeout(() => staggerIn(grid, '.app-card, .device-item, .platform-chip', 200), 200);
+
+    // ─── First-run onboarding ─────────────────────────────────────
+    // Fresh accounts (0 apps, 0 devices, < 24h old) get a 3-step welcome
+    // instead of an empty dashboard: what you can create, one identity
+    // everywhere, and pairing a device. Dismissed once, never again.
+    try {
+      const ONBOARDING_KEY = 'thay_onboarding_seen';
+      const isFresh = !apps.length && !devices.length && profile.created &&
+        (Date.now() - new Date(profile.created).getTime()) < 24 * 60 * 60 * 1000;
+      if (isFresh && !localStorage.getItem(ONBOARDING_KEY)) {
+        localStorage.setItem(ONBOARDING_KEY, '1');
+        const overlay = h('div', { className: 'onboarding-overlay', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'welcome to thay' });
+        const card = h('div', { className: 'onboarding-card glass-card' }, [
+          h('h2', {}, ['welcome to thay']),
+          h('p', { className: 'subtitle' }, ['one identity for the whole universe of making']),
+          h('div', { className: 'onboarding-steps' }, [
+            h('div', { className: 'onboarding-step' }, [
+              h('span', { className: 'onboarding-step-num' }, ['01']),
+              h('div', {}, [
+                h('strong', {}, ['make something']),
+                h('p', {}, ['record a song, cut a video, design a brand — the studio family is where it happens.']),
+              ]),
+            ]),
+            h('div', { className: 'onboarding-step' }, [
+              h('span', { className: 'onboarding-step-num' }, ['02']),
+              h('div', {}, [
+                h('strong', {}, ['one identity, every surface']),
+                h('p', {}, ['sign in once, unlock thaypley.com, tunes, tv, fam, and werk.']),
+              ]),
+            ]),
+            h('div', { className: 'onboarding-step' }, [
+              h('span', { className: 'onboarding-step-num' }, ['03']),
+              h('div', {}, [
+                h('strong', {}, ['pair a device']),
+                h('p', {}, ['link your desktop or phone from any thaypley app\'s settings to see it here.']),
+              ]),
+            ]),
+          ]),
+          h('div', { className: 'onboarding-actions' }, [
+            h('button', { className: 'btn btn-primary', onClick: () => overlay.remove() }, ['start creating']),
+            h('button', { className: 'btn btn-ghost', onClick: () => navigate('/devices') }, ['pair a device']),
+          ]),
+        ]);
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        // Click on the overlay (not the card) dismisses.
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+        // Escape dismisses.
+        const onKey = (e) => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); } };
+        document.addEventListener('keydown', onKey);
+      }
+    } catch (err) {
+      // Non-fatal: onboarding is decorative, never load-bearing.
+      console.warn('onboarding skipped:', err);
+    }
 
     // Router cleanup: stop the weather poll and tear down its DOM whenever
     // the user navigates away from the dashboard.

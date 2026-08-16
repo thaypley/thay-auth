@@ -39,6 +39,15 @@ export default async function DevicesPage(container) {
   ]);
   body.appendChild(heading);
 
+  // ─── Skeleton shell ──────────────────────────────────────────────
+  // Paint shimmer panels immediately so the page is never a blank
+  // screen while the devices/sessions fetches are in flight.
+  const skeleton = h('div', { 'aria-busy': 'true', style: { opacity: 0.7 } }, [
+    h('div', { className: 'glass-card-static', style: { height: '160px' } }),
+    h('div', { className: 'glass-card-static', style: { height: '160px', marginTop: 'var(--space-xl)' } }),
+  ]);
+  body.appendChild(skeleton);
+
   // ─── Paired devices panel ────────────────────────────────────────
   const deviceList = h('div', { className: 'devices-list' });
   const devicesCard = h('div', { className: 'glass-card-static' }, [
@@ -66,6 +75,7 @@ export default async function DevicesPage(container) {
   try {
     [devices, sessions] = await Promise.all([auth.listDevices(), auth.listSessions()]);
   } catch (err) {
+    skeleton.remove();
     body.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center', marginTop: 'var(--space-xl)' } }, [
       h('h3', {}, ['something broke']),
       h('p', { className: 'input-hint-error' }, ['could not load devices right now — try again shortly.']),
@@ -73,6 +83,8 @@ export default async function DevicesPage(container) {
     ]));
     return;
   }
+
+  skeleton.remove();
 
   // Rows are rebuilt after every action so stale UI never lingers.
   const renderDevices = () => {

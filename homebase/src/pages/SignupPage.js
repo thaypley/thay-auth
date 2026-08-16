@@ -38,6 +38,7 @@ export default async function SignupPage(container) {
 
   const page = h('div', { className: 'auth-page' }, [
     h('div', { className: 'auth-logo' }, ['thay']),
+    h('p', { className: 'auth-hero' }, ['one identity for the whole universe of making — music, video, design, and more.']),
     h('div', { className: 'form-card', style: { maxWidth: '520px' } }, [stepsIndicator, content]),
   ]);
 

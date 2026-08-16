@@ -21,11 +21,20 @@ export default async function PlatformsPage(container) {
   mount(container, shell);
   pageTransition(shell.querySelector('.downloads-page'));
 
+  // ─── Skeleton shell ──────────────────────────────────────────────
+  // Paint shimmer panels immediately so the page is never a blank
+  // screen while the platform directory fetch is in flight.
+  const skeleton = h('div', { 'aria-busy': 'true', style: { opacity: 0.7 } }, [
+    h('div', { className: 'glass-card-static', style: { height: '200px' } }),
+  ]);
+  shellEl.appendChild(skeleton);
+
   let platforms = [];
   try {
     platforms = await auth.getPlatforms();
   } catch (err) {
     console.error('Failed to load platforms:', err);
+    skeleton.remove();
     shellEl.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center', gridColumn: '1 / -1' } }, [
       h('h3', {}, ['something broke']),
       h('p', { className: 'input-hint-error' }, ['could not load the platform directory right now — try again shortly.']),
@@ -33,6 +42,8 @@ export default async function PlatformsPage(container) {
     ]));
     return;
   }
+
+  skeleton.remove();
 
   const core = platforms.filter((p) => ['thaypley', 'tunes', 'tv', 'fam', 'werk'].includes(p.slug));
 

@@ -29,11 +29,21 @@ export default async function BillingPage(container) {
   mount(container, shell);
   pageTransition(body);
 
+  // ─── Skeleton shell ──────────────────────────────────────────────
+  // Paint shimmer panels immediately so the page is never a blank
+  // screen while the subscription fetch is in flight.
+  const skeleton = h('div', { 'aria-busy': 'true', style: { opacity: 0.7 } }, [
+    h('div', { className: 'glass-card-static', style: { height: '180px' } }),
+    h('div', { className: 'glass-card-static', style: { height: '120px', marginTop: 'var(--space-xl)' } }),
+  ]);
+  body.appendChild(skeleton);
+
   let sub;
   try {
     sub = await auth.getSubscription();
   } catch (err) {
     console.error('Failed to load subscription:', err);
+    skeleton.remove();
     body.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center' } }, [
       h('h2', {}, ['something broke']),
       h('p', { className: 'subtitle' }, ['could not load your subscription — the server had an issue']),
@@ -41,6 +51,8 @@ export default async function BillingPage(container) {
     ]));
     return;
   }
+
+  skeleton.remove();
 
   const plan = sub.plan || null;
   const isArchitect = sub.architect === true || sub.tier === 'architect';

@@ -96,6 +96,7 @@ export default async function LoginPage(container) {
 
   const page = h('div', { className: 'auth-page' }, [
     h('div', { className: 'auth-logo' }, ['thay']),
+    h('p', { className: 'auth-hero' }, ['one identity for the whole universe of making — music, video, design, and more.']),
     card,
   ]);
 

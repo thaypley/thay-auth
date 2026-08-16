@@ -67,6 +67,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-md);
+  position: relative;
 }
 
 .navbar-user {
@@ -81,6 +82,49 @@
   border: none;
   font: inherit;
   appearance: none;
+}
+
+/* ─── Navbar Vibe Popover ─────────────────────────────────────── */
+
+.navbar-vibe-btn {
+  position: relative;
+}
+
+.vibe-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: var(--space-lg);
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface-frost, var(--surface));
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-md);
+  box-shadow: var(--glass-shadow-lg);
+}
+
+.vibe-popover-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vibe-sub);
+  margin-right: 2px;
+}
+
+@media (max-width: 480px) {
+  .vibe-popover {
+    right: var(--space-md);
+  }
+
+  .vibe-popover-label {
+    display: none;
+  }
 }
 
 @media (max-width: 480px) {
@@ -312,6 +356,12 @@
 
 .input::placeholder {
   color: var(--vibe-ph);
+}
+
+.input-sm {
+  padding: var(--space-xs) var(--space-md);
+  font-size: var(--font-size-sm);
+  border-radius: var(--radius-sm);
 }
 
 .input-error {
@@ -626,6 +676,25 @@
   gap: var(--space-md);
 }
 
+.catalog-card-footer--waitlist {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.catalog-card-footer--waitlist .input-hint {
+  grid-column: 1 / -1;
+  text-align: center;
+  margin-left: 0;
+}
+
+.catalog-card-footer--waitlist .input-hint-error {
+  grid-column: 1 / -1;
+  text-align: center;
+  margin-left: 0;
+}
+
 /* ─── Toast ────────────────────────────────────────────────────── */
 
 .toast-container {
@@ -887,6 +956,82 @@
   gap: var(--space-lg);
 }
 
+/* ─── Dashboard Creator Hero ─────────────────────────────────── */
+
+.creator-hero {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-xl);
+  padding: var(--space-xl) var(--space-2xl);
+  background-image: var(--glass-shimmer), var(--liquid-dew), var(--vibe-primary);
+  background-size: 400% 100%, 100% 100%, 100% 100%;
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--glass-shadow-lg);
+}
+
+.creator-hero h2 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-2xl);
+  color: var(--vibe-primary-text);
+  text-shadow: 0 0 24px var(--vibe-glow);
+  margin-bottom: var(--space-xs);
+}
+
+.creator-hero .subtitle {
+  color: var(--vibe-primary-text);
+  opacity: 0.85;
+  max-width: 46ch;
+}
+
+.creator-hero-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.creator-hero-actions .btn-primary {
+  background: var(--vibe-primary-text);
+  color: var(--vibe-bg);
+}
+
+.creator-hero-actions .btn-secondary {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--vibe-primary-text);
+}
+
+.creator-hero-actions .btn-ghost {
+  color: var(--vibe-primary-text);
+}
+
+.creator-hero-actions .right-panel-link {
+  width: 100%;
+  text-align: right;
+  color: var(--vibe-primary-text);
+  opacity: 0.9;
+}
+
+@media (max-width: 768px) {
+  .creator-hero {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-lg);
+  }
+
+  .creator-hero-actions {
+    justify-content: flex-start;
+  }
+
+  .creator-hero-actions .right-panel-link {
+    text-align: left;
+  }
+}
+
 @media (max-width: 768px) {
   .dashboard-grid {
     grid-template-columns: 1fr;
@@ -911,9 +1056,19 @@
   font-family: var(--font-display);
   font-size: var(--font-size-3xl);
   color: var(--vibe-accent);
-  margin-bottom: var(--space-lg);
+  margin-bottom: var(--space-md);
   letter-spacing: 0.05em;
   text-shadow: 0 0 24px var(--vibe-glow);
+}
+
+.auth-hero {
+  font-family: var(--font-body);
+  font-size: var(--font-size-base);
+  color: var(--vibe-sub);
+  text-align: center;
+  max-width: 42ch;
+  margin: 0 auto var(--space-lg);
+  line-height: 1.5;
 }
 
 /* ─── Error Page ──────────────────────────────────────────────── */
@@ -975,6 +1130,95 @@
   color: var(--vibe-sub);
   text-align: center;
   margin-top: 6px;
+}
+
+/* ─── First-Run Onboarding Modal ─────────────────────────────── */
+
+.onboarding-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  background: rgba(10, 4, 24, 0.72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  animation: onboarding-fade 240ms var(--ease-out);
+}
+
+@keyframes onboarding-fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.onboarding-card {
+  max-width: 480px;
+  width: 100%;
+  padding: var(--space-2xl);
+  text-align: left;
+  animation: onboarding-rise 320ms var(--spring);
+}
+
+@keyframes onboarding-rise {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.onboarding-card h2 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-2xl);
+  color: var(--vibe-text);
+  text-shadow: 0 0 24px var(--vibe-glow);
+  margin-bottom: var(--space-xs);
+}
+
+.onboarding-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+  margin: var(--space-xl) 0;
+}
+
+.onboarding-step {
+  display: flex;
+  gap: var(--space-md);
+  align-items: flex-start;
+}
+
+.onboarding-step-num {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  color: var(--vibe-accent);
+  background: var(--glass-mid);
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.onboarding-step strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: var(--font-size-base);
+  color: var(--vibe-text);
+  margin-bottom: 2px;
+}
+
+.onboarding-step p {
+  font-size: var(--font-size-sm);
+  color: var(--vibe-sub);
+  margin: 0;
+}
+
+.onboarding-actions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 /* ─── Account Drawer (right panel — ported from thaypley.com) ─────── */
