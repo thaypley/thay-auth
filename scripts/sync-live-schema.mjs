@@ -117,7 +117,7 @@ const CATALOG_APPS = [
     slug: 'tv', displayName: 'thay(tv)', tagline: 'The screen side of thaypley.',
     description: 'Watch, share, and stream within the thaypley family.',
     isFree: true, price: 'Free', version: '1.0.0',
-    downloads: { web: 'https://tv.thaypley.com' },
+    downloads: { mac: '', windows: '', linux: '', web: 'https://tv.thaypley.com' },
     sortOrder: 12, published: true,
   },
   {
@@ -354,6 +354,23 @@ async function upsertCatalog(pb) {
       for (const [key, value] of Object.entries(payload)) {
         if (key === 'slug') continue;
         const current = rec[key];
+        if (key === 'downloads' && value && typeof value === 'object' && current && typeof current === 'object') {
+          // Merge download targets key-by-key so a row can gain (e.g.)
+          // desktop builds without clobbering its live web URL — and so
+          // a already-desktop row never loses existing download links.
+          const merged = { ...value, ...current };
+          const currentKeys = Object.keys(current);
+          if (Object.keys(merged).length !== currentKeys.length || currentKeys.some((k) => !(k in value))) {
+            updates.downloads = merged;
+          }
+          continue;
+        }
+        if (key === 'kind' && current !== value) {
+          // Keep the stored kind in lockstep with the download-key
+          // classification (desktop/cli/cloud/web) on live rows.
+          updates.kind = value;
+          continue;
+        }
         if (key === 'sortOrder' || current === null || current === undefined || current === '' || isEmptyObj(current)) {
           updates[key] = value;
         }

@@ -7,6 +7,20 @@
 
 export const CORE_APPS = [
   {
+    slug: 'tunes',
+    displayName: 'thaypley(tunes)',
+    tagline: 'the whole world\'s music, curated for creators',
+    description: 'stream, queue, and share across every device — deep artist mode, unlimited skips, and studio-grade output.',
+    url: 'https://tunes.thaypley.com',
+  },
+  {
+    slug: 'tv',
+    displayName: 'thaypley(tv)',
+    tagline: 'television for the multiverse',
+    description: 'watch parties, ambient channels, and creator-first originals — the living room side of thaypley.',
+    url: 'https://tv.thaypley.com',
+  },
+  {
     slug: 'thay-jot',
     displayName: 'thay(jot)',
     tagline: 'thoughts, captured at light speed',

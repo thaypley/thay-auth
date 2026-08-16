@@ -1,7 +1,7 @@
 /**
- * apps — the curated core app family: thay(jot), thay(locker),
- * (chronometer), (slashcat) browser. Replaces the app directory that
- * used to live on /platforms.
+ * apps — the curated core app family: thaypley(tunes), thaypley(tv),
+ * thay(jot), thay(locker), (chronometer), (slashcat) browser. Replaces
+ * the app directory that used to live on /platforms.
  */
 import { h, mount } from '../utils/dom.js';
 import { pageTransition, staggerIn } from '../utils/animations.js';
@@ -17,7 +17,7 @@ export default async function AppsPage(container) {
   const heading = h('div', { className: 'downloads-header' }, [
     h('h2', {}, ['apps']),
     h('p', { className: 'subtitle' }, ['the core thaypley app family — one identity, every surface']),
-    h('p', { className: 'input-hint' }, ['thay(jot) · thay(locker) · (chronometer) · (slashcat) browser']),
+    h('p', { className: 'input-hint' }, ['thaypley(tunes) · thaypley(tv) · thay(jot) · thay(locker) · (chronometer) · (slashcat) browser']),
   ]);
 
   const body = h('div', { className: 'downloads-body' });

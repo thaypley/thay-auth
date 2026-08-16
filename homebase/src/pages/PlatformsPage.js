@@ -1,6 +1,7 @@
 /**
- * Platforms — the three core thaypley web surfaces.
- * Exactly thaypley.com, fam.thaypley.com, werk.thaypley.com.
+ * Platforms — the five core thaypley web surfaces.
+ * Exactly thaypley.com, tunes.thaypley.com, tv.thaypley.com,
+ * fam.thaypley.com, werk.thaypley.com.
  * Apps now live on their own pages (/apps, /dabba, /tabbi, /creative).
  */
 import { h, mount } from '../utils/dom.js';
@@ -33,9 +34,7 @@ export default async function PlatformsPage(container) {
     return;
   }
 
-  // Only the three official web platforms — trimmed from the old roster
-  // (du, auth, docs removed; the app directory moved to /apps).
-  const core = platforms.filter((p) => ['thaypley', 'fam', 'werk'].includes(p.slug));
+  const core = platforms.filter((p) => ['thaypley', 'tunes', 'tv', 'fam', 'werk'].includes(p.slug));
 
   shellEl.appendChild(h('div', {}, [
     h('div', { className: 'section-header' }, [

@@ -5,8 +5,8 @@
  * into the cross-app system menu.
  *
  * Each entry has a slug, human name, URL, one-liner, and a `type` so
- * the UI can group the web platform family (thaypley.com, fam, werk,
- * du) separately from desktop/CLI/cloud downloads.
+ * the UI can group the web platform family (thaypley.com, tunes, tv,
+ * fam, werk) separately from desktop/CLI/cloud downloads.
  */
 
 export interface PlatformInfo {
@@ -25,6 +25,20 @@ export const OFFICIAL_PLATFORMS: PlatformInfo[] = [
     name: 'thaypley.com',
     url: 'https://thaypley.com',
     tagline: 'the portal — your creator home base',
+    type: 'web',
+  },
+  {
+    slug: 'tunes',
+    name: 'thaypley(tunes)',
+    url: 'https://tunes.thaypley.com',
+    tagline: 'the whole world\'s music, curated for creators',
+    type: 'web',
+  },
+  {
+    slug: 'tv',
+    name: 'thaypley(tv)',
+    url: 'https://tv.thaypley.com',
+    tagline: 'television for the multiverse',
     type: 'web',
   },
   {
