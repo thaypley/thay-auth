@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pbUnavailable, PAIRING_UNAVAILABLE, mapDeviceItems } from '../routes/devices.js';
+import { pbUnavailable, PAIRING_UNAVAILABLE, mapDeviceItems, ownsDevice } from '../routes/devices.js';
 
 describe('devices route resilience', () => {
   it('maps a missing collection (PB 404) to 503', () => {
@@ -51,6 +51,21 @@ describe('devices route resilience', () => {
       error: 'Device pairing is temporarily unavailable',
       code: 'DEVICE_PAIRING_UNAVAILABLE',
     });
+  });
+});
+
+describe('ownsDevice (DELETE /devices/:id ownership gate)', () => {
+  it('returns true when the device belongs to the user', () => {
+    expect(ownsDevice({ id: 'd1', userId: 'u1' }, 'u1')).toBe(true);
+  });
+
+  it('returns false when the device belongs to another user', () => {
+    expect(ownsDevice({ id: 'd1', userId: 'u2' }, 'u1')).toBe(false);
+  });
+
+  it('returns false when the device row is missing', () => {
+    expect(ownsDevice(null, 'u1')).toBe(false);
+    expect(ownsDevice(undefined, 'u1')).toBe(false);
   });
 });
 

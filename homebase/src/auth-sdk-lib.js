@@ -183,6 +183,9 @@ export class ThayAuth {
     async revokeSession(sessionId) {
         await this.request(`/sessions/${sessionId}`, { method: 'DELETE' });
     }
+    async revokeDevice(deviceId) {
+        await this.request(`/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' });
+    }
     async healthCheck() {
         return this.request('/auth/health');
     }

@@ -7,6 +7,13 @@ describe('KNOWN_APPS', () => {
       'homebase', 'tunes', 'tv', 'studio', 'jot', 'chronometer', 'dabba',
     ]));
   });
+
+  it('includes the new 2026 fleet (locker, slashcat, dabba-root, gab, tabbi family, creative suite)', () => {
+    expect(KNOWN_APPS).toEqual(expect.arrayContaining([
+      'locker', 'slashcat', 'dabba-root', 'gab', 'tabbi', 'webiverse',
+      'webispectral', 'design', 'photo', 'video', 'effect', 'pattern',
+    ]));
+  });
 });
 
 describe('normalizeApp', () => {

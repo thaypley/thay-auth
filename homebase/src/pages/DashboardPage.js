@@ -198,54 +198,31 @@ export default async function DashboardPage(container) {
       }, ['edit profile']),
     ].filter(Boolean));
 
-    // ─── App Grid ──────────────────────────────────────────────────
-
-    const appCards = apps.map(app => {
-      const statusBadge = app.latestVersion && app.latestVersion !== app.installedVersion
-        ? h('span', { className: 'app-card-badge' }, ['update'])
-        : null;
-
-      return h('div', { className: 'app-card' }, [
-        h('div', { className: 'app-card-icon' }, [app.appName ? app.appName[0].toUpperCase() : '?']),
-        h('div', { className: 'app-card-name' }, [app.appName || app.appId]),
-        h('div', { className: 'app-card-version' }, [app.installedVersion ? `v${app.installedVersion}` : 'version unknown']),
-        statusBadge,
-      ].filter(Boolean));
-    });
-
-    // Link to the public downloads catalog rather than a dead-end card.
-    // Only this card gets the pointer/hover-lift affordance — the real
-    // installed-app cards above have no action, so they no longer look
-    // clickable when they aren't.
-    appCards.push(h('div', {
-      className: 'app-card app-card--action',
-      tabindex: '0',
-      role: 'button',
-      'aria-label': 'get more apps',
-      onClick: () => navigate('/downloads'),
-      onKeydown: (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          navigate('/downloads');
-        }
-      },
-    }, [
-      h('div', { className: 'app-card-icon', style: { background: 'var(--gradient-pink)', fontSize: '24px' } }, ['+']),
-      h('div', { className: 'app-card-name' }, ['get more apps']),
-    ]));
+    // ─── Apps Summary ────────────────────────────────────────────────
 
     const appsSection = h('div', { className: 'glass-card-static' }, [
       h('div', { className: 'section-header' }, [
         h('h3', {}, ['your applications']),
         h('span', { className: 'input-hint' }, [`${apps.length} installed`]),
       ]),
-      h('div', { className: 'app-grid' }, appCards),
+      h('div', { className: 'apps-summary' }, [
+        h('p', { className: 'input-hint' }, ['every core app, one identity — browse the full thaypley family.']),
+        h('div', { className: 'apps-summary-actions' }, [
+          h('button', {
+            className: 'btn btn-secondary btn-sm',
+            onClick: () => navigate('/apps'),
+          }, ['browse apps →']),
+          h('button', {
+            className: 'btn btn-ghost btn-sm',
+            onClick: () => navigate('/downloads'),
+          }, ['downloads']),
+        ]),
+      ]),
     ]);
 
     // ─── Devices Panel ─────────────────────────────────────────────
 
     const devicesHiccup = state._devicesHiccup;
-    const appsHiccup = state._appsHiccup;
 
     // A device is "live" when its token expiry is in the future and it has
     // not been revoked — gives the panel a real-time health signal instead
@@ -292,18 +269,18 @@ export default async function DashboardPage(container) {
     const devicesSection = h('div', { className: 'glass-card-static' }, [
       h('div', { className: 'section-header' }, [
         h('h3', {}, ['connected devices']),
-        h('span', { className: 'input-hint' }, [
-          appsHiccup ? 'some panels hiccuped' : `${devices.length} connected`,
-        ]),
+        h('span', { className: 'input-hint' }, [`${devices.length} connected`]),
       ]),
-      hiccupChip,
       h('div', { className: 'devices-list' }, deviceItems),
+      h('div', { className: 'settings-links', style: { marginTop: '12px' } }, [
+        h('a', { className: 'right-panel-link', href: '#/devices' }, ['manage devices →']),
+      ]),
     ]);
 
     // ─── Platform Strip (quick links to the thay web family) ──────
     // Best-effort: if the directory API hiccups, the dashboard still
     // renders — links are decorative shortcuts, never load-bearing.
-    const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk', 'du'].includes(p.slug));
+    const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk'].includes(p.slug));
     const platformChips = [
       ...corePlatforms.map((p) => h('a', {
         className: 'platform-chip',

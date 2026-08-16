@@ -114,11 +114,17 @@ export default async function BillingPage(container) {
     ]),
     h('div', { className: 'billing-plan-name' }, [plan.name || 'thay free']),
     h('p', { className: 'billing-plan-blurb' }, [plan.blurb || '']),
+    h('div', { className: 'billing-device-limit' }, [
+      h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
+        plan.deviceLimit === -1 ? 'unlimited devices' : `${plan.deviceLimit ?? 1} device${plan.deviceLimit === 1 ? '' : 's'}`,
+      ]),
+    ]),
     h('ul', { className: 'billing-feature-list' }, (plan.features || []).map((f) => h('li', {}, [f]))),
     h('div', { className: 'billing-actions' }, [
       plan.id !== 'free'
         ? h('button', { className: 'btn btn-ghost btn-sm', onClick: openPortal }, ['manage / billing portal'])
         : h('span', { className: 'input-hint', style: { alignSelf: 'center' } }, ['pick a plan below to upgrade']),
+      h('button', { className: 'btn btn-ghost btn-sm', onClick: openPortal }, ['payment method & invoices']),
       plan.id !== 'free'
         ? h('button', { className: 'btn btn-ghost btn-sm', style: { color: 'var(--danger, #ff6b6b)' }, onClick: cancelPlan }, ['cancel subscription'])
         : h('span', { className: 'input-hint', style: { alignSelf: 'center' } }, billingEnabled ? '' : 'mock billing mode — set STRIPE_SECRET_KEY for live payments'),
@@ -127,10 +133,10 @@ export default async function BillingPage(container) {
 
   // ─── Plan options (thay-sub tiers) ──────────────────────────────
   const tierOptions = [
-    { id: 'free', name: 'thay free', price: '$0', blurb: 'every core surface' },
-    { id: 'core', name: 'thay core', price: '$6/mo', blurb: 'streaming + 5 devices' },
-    { id: 'plus', name: 'thay plus', price: '$12/mo', blurb: 'studio + sync' },
-    { id: 'pro', name: 'thay pro', price: '$24/mo', blurb: 'full creator stack' },
+    { id: 'free', name: 'thay free', price: '$0', blurb: 'every core surface', deviceLimit: 1 },
+    { id: 'core', name: 'thay core', price: '$6/mo', blurb: 'streaming + 5 devices', deviceLimit: 5 },
+    { id: 'plus', name: 'thay plus', price: '$12/mo', blurb: 'studio + sync', deviceLimit: 10 },
+    { id: 'pro', name: 'thay pro', price: '$24/mo', blurb: 'full creator stack', deviceLimit: -1 },
   ];
   const tierGrid = h('div', { className: 'billing-tier-grid' }, tierOptions.map((t) => {
     const isCurrent = t.id === sub.tier;
@@ -138,6 +144,11 @@ export default async function BillingPage(container) {
       h('div', { className: 'billing-tier-name' }, [t.name]),
       h('div', { className: 'billing-tier-price' }, [t.price]),
       h('div', { className: 'input-hint' }, [t.blurb]),
+      h('div', { className: 'billing-tier-devices' }, [
+        h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-sub)' } }, [
+          t.deviceLimit === -1 ? 'unlimited devices' : `${t.deviceLimit} device${t.deviceLimit === 1 ? '' : 's'}`,
+        ]),
+      ]),
       isCurrent
         ? h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, ['current'])
         : t.id === 'free'

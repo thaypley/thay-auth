@@ -104,6 +104,7 @@ export default async function SettingsPage(container) {
     ]),
     h('div', { className: 'settings-links' }, [
       h('a', { className: 'right-panel-link', href: '#/profile' }, ['edit profile']),
+      h('a', { className: 'right-panel-link', href: '#/devices' }, ['manage connected devices']),
       h('a', { className: 'right-panel-link', href: '#/billing' }, ['billing & subscriptions']),
     ]),
   ]);

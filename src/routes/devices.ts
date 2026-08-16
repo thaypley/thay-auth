@@ -96,6 +96,11 @@ export function mapDeviceItems(items: Record<string, unknown>[] | undefined): Re
   }));
 }
 
+/** True when the device row belongs to the requesting user. */
+export function ownsDevice(device: Record<string, unknown> | null | undefined, userId: string): boolean {
+  return Boolean(device && device.userId === userId);
+}
+
 function generateToken(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   const bytes = crypto.randomBytes(64);
@@ -202,6 +207,50 @@ router.delete('/unpair', requireUser, async (req: Request, res: Response) => {
     const unavailable = pbUnavailable(err);
     if (unavailable) return res.status(unavailable).json(PAIRING_UNAVAILABLE);
     return res.status(500).json({ error: 'Failed to unpair device' });
+  }
+});
+
+router.delete('/:id', requireUser, async (req: Request, res: Response) => {
+  try {
+    const deviceId = req.params.id;
+    if (!deviceId) {
+      return res.status(400).json({ error: 'Device id is required' });
+    }
+
+    const pb = await getAdminPb();
+
+    // Missing device (or collection) must read as a 404, not a 500.
+    let device: Record<string, unknown> | null = null;
+    try {
+      device = await pb.collection('devices').getOne(deviceId) as unknown as Record<string, unknown>;
+    } catch (err) {
+      const status = (err as { status?: number })?.status;
+      if (status === 404) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+      if (status === 401 || status === 403) {
+        invalidateAdminPb();
+        return res.status(503).json({ error: 'Thay services are temporarily unavailable' });
+      }
+      throw err;
+    }
+
+    // Security: only the owning user may revoke a paired device.
+    if (!ownsDevice(device, req.user!.id)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    await pb.collection('devices').update(deviceId, { revoked: true });
+    invalidateDevice(deviceId);
+
+    logger.debug(`Device revoked by id: ${deviceId} for user ${req.user!.id}`);
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    logger.error('revoke device by id error:', err);
+    const unavailable = pbUnavailable(err);
+    if (unavailable) return res.status(unavailable).json({ error: 'Thay services are temporarily unavailable' });
+    return res.status(500).json({ error: 'Failed to revoke device' });
   }
 });
 

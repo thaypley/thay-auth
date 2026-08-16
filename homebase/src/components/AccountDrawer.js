@@ -163,6 +163,10 @@ export function mountAccountDrawer(container, { open, onClose }) {
   // ── thay-auth info links (replacing thaypley.com's platform links) ─
   const links = [
     { label: 'downloads', href: '#/downloads' },
+    { label: 'apps', href: '#/apps' },
+    { label: 'dabba', href: '#/dabba' },
+    { label: 'tabbi', href: '#/tabbi' },
+    { label: 'creative', href: '#/creative' },
     { label: 'platforms', href: '#/platforms' },
     { label: 'billing & subscriptions', href: '#/billing' },
     { label: 'settings', href: '#/settings' },

@@ -134,6 +134,90 @@ const CATALOG_APPS = [
     downloads: { web: 'https://auth.thaypley.com' },
     sortOrder: 14, published: true,
   },
+  {
+    slug: 'thay-locker', displayName: 'thay(locker)', tagline: 'your encrypted vault for everything',
+    description: 'passwords, keys, files, and secrets — locked tight and syncable across devices.',
+    isFree: true, price: 'Free', version: '1.0.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://locker.thaypley.com' },
+    sortOrder: 15, published: true, family: 'core',
+  },
+  {
+    slug: 'slashcat', displayName: '(slashcat) browser', tagline: 'a browser that thinks with you',
+    description: 'the creator browser — command-first navigation, tab groups, and AI-assisted browsing built in.',
+    isFree: true, price: 'Free', version: '0.9.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://slashcat.thaypley.com' },
+    sortOrder: 16, published: true, family: 'core',
+  },
+  {
+    slug: 'dabba-root', displayName: '(dabba) — root', tagline: 'the core assistant kernel',
+    description: 'the root daemon that powers every dabba skill — local, private, always on.',
+    isFree: true, price: 'Free', version: '0.6.2',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/dabba' },
+    sortOrder: 17, published: true, family: 'dabba',
+  },
+  {
+    slug: 'gab', displayName: '(gab)-skills', tagline: 'skills for your assistant',
+    description: 'the (gab) skills marketplace — install personality, workflow, and automation skills into dabba.',
+    isFree: true, price: 'Free', version: '0.4.0',
+    downloads: { web: 'https://thaypley.com/dabba' },
+    sortOrder: 18, published: true, family: 'dabba',
+  },
+  {
+    slug: 'tabbi', displayName: 'tabbi(COS)', tagline: 'the cognitive operating system',
+    description: 'an operating layer for thought — capture, structure, and retrieve everything your mind touches.',
+    isFree: true, price: 'Free', version: '0.5.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/tabbi' },
+    sortOrder: 19, published: true, family: 'tabbi',
+  },
+  {
+    slug: 'webiverse', displayName: '(webiverse)', tagline: 'personal context infrastructure',
+    description: 'your context graph — every note, link, and memory woven into one navigable universe.',
+    isFree: true, price: 'Free', version: '0.5.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/webiverse' },
+    sortOrder: 20, published: true, family: 'tabbi',
+  },
+  {
+    slug: 'webispectral', displayName: '(webispectral)', tagline: 'protocol for minds, connected',
+    description: 'the protocol layer — standard schemas and handshakes for sharing context between apps and agents.',
+    isFree: true, price: 'Free', version: '0.2.0',
+    downloads: { mac: '', windows: '', linux: '' },
+    sortOrder: 21, published: true, family: 'tabbi',
+  },
+  {
+    slug: 'thay-design', displayName: '(design)', tagline: 'graphic design, reimagined',
+    description: 'vector, layout, and brand tools in one fluid canvas — made for creators who ship.',
+    isFree: false, price: '$8/mo', version: '0.3.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/design' },
+    sortOrder: 22, published: true, family: 'creative',
+  },
+  {
+    slug: 'ls-photo', displayName: '(ls)photo', tagline: 'photo editing, light-speed',
+    description: 'non-destructive RAW editing, layers, and film-grade color in a blazing-fast editor.',
+    isFree: false, price: '$8/mo', version: '0.3.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/ls-photo' },
+    sortOrder: 23, published: true, family: 'creative',
+  },
+  {
+    slug: 'ls-video', displayName: '(ls)video', tagline: 'video editing, light-speed',
+    description: 'timeline-first editing, smart proxies, and AI assists that never get in the way of the cut.',
+    isFree: false, price: '$10/mo', version: '0.3.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/ls-video' },
+    sortOrder: 24, published: true, family: 'creative',
+  },
+  {
+    slug: 'ls-effect', displayName: '(ls)effect', tagline: 'motion graphics & effects',
+    description: 'compositing, particles, and typography in motion — the VFX surface for the thay universe.',
+    isFree: false, price: '$10/mo', version: '0.2.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/ls-effect' },
+    sortOrder: 25, published: true, family: 'creative',
+  },
+  {
+    slug: 'thay-pattern', displayName: '(pattern)', tagline: 'fashion design studio',
+    description: 'pattern drafting, textile simulation, and runway-ready presentation in one studio.',
+    isFree: false, price: '$8/mo', version: '0.1.0',
+    downloads: { mac: '', windows: '', linux: '', web: 'https://thaypley.com/pattern' },
+    sortOrder: 26, published: true, family: 'creative',
+  },
 ];
 
 function classifyKind(row) {
@@ -142,6 +226,16 @@ function classifyKind(row) {
   const d = row.downloads;
   if (d && typeof d === 'object' && !Array.isArray(d) && ('mac' in d || 'windows' in d || 'linux' in d)) return 'desktop';
   return 'web';
+}
+
+function familyOf(row) {
+  const legacyFamily = {
+    'dabba-cli': 'dabba',
+    'dabba-desktop': 'dabba',
+    'dabba-cloud': 'dabba',
+    'studio': 'creative',
+  }[row.slug];
+  return row.family || legacyFamily || 'core';
 }
 
 function isEmptyObj(v) {
@@ -240,7 +334,8 @@ async function ensureAutodateFields(pb, collectionName, label) {
 async function upsertCatalog(pb) {
   for (const app of CATALOG_APPS) {
     const kind = classifyKind(app);
-    const payload = { ...app, kind };
+    const family = familyOf(app);
+    const payload = { ...app, kind, family };
     let existing;
   try {
     existing = await pb.collection('catalog_apps').getList(1, 1, {
@@ -295,6 +390,7 @@ async function main() {
   await ensureField(pb, 'users', { name: 'avatarVersion', type: 'number', required: false, min: 0, max: 999999 }, 'users.avatarVersion');
   await ensureField(pb, 'user_apps', { name: 'syncUrl', type: 'text', required: false, max: 500 }, 'user_apps.syncUrl');
   await ensureField(pb, 'catalog_apps', { name: 'kind', type: 'text', required: false, max: 30 }, 'catalog_apps.kind');
+  await ensureField(pb, 'catalog_apps', { name: 'family', type: 'text', required: false, max: 40 }, 'catalog_apps.family');
 
   await upsertCatalog(pb);
 

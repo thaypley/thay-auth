@@ -36,6 +36,11 @@ export function NavBar() {
     onClick: () => navigate('/platforms'),
   }, ['platforms']);
 
+  const appsLink = h('button', {
+    className: 'btn btn-ghost btn-sm',
+    onClick: () => navigate('/apps'),
+  }, ['apps']);
+
   // Invite minting is architect-only (the API enforces this too — the
   // menu item is just the surface). Normal users keep a clean hub.
   const isArchitect = !!(state.user?.isArchitect || state.profile?.isArchitect);
@@ -49,6 +54,7 @@ export function NavBar() {
 
   const end = h('div', { className: 'navbar-end' });
   end.appendChild(platformsLink);
+  end.appendChild(appsLink);
   end.appendChild(downloadsLink);
   if (invitesLink) end.appendChild(invitesLink);
 

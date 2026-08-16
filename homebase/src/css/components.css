@@ -1343,3 +1343,75 @@
 .platform-chip--all {
   color: var(--vibe-accent);
 }
+
+/* ── New family + devices page utilities ──────────────────────────── */
+
+.family-nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  background: var(--glass);
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-lg);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+.family-hero {
+  margin-bottom: var(--space-2xl);
+  padding: var(--space-2xl);
+  background: linear-gradient(135deg, var(--glass), var(--glass-mid));
+  border: 1px solid var(--glass-hi);
+  border-radius: var(--radius-lg);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+.family-hero-text {
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  line-height: 1.65;
+  color: var(--vibe-text);
+  max-width: 72ch;
+  white-space: pre-line;
+}
+
+.apps-summary {
+  padding: var(--space-md) 0 var(--space-sm);
+}
+
+.apps-summary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.billing-device-limit {
+  margin-top: var(--space-sm);
+}
+
+.billing-tier-devices {
+  margin-top: var(--space-xs);
+}
+
+.billing-tier .billing-tier-devices .app-card-badge,
+.billing-device-limit .app-card-badge {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.device-scopes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-xs);
+}
+
+.device-scope {
+  font-size: var(--font-size-xs);
+  letter-spacing: 0.03em;
+}

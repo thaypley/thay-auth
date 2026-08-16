@@ -1,19 +1,18 @@
 /**
- * Platforms — the full thay ecosystem hub.
- * Every surface authenticated by thay-auth, displayed as a launchpad:
- * web platform family (thaypley.com, fam, werk, du, auth, docs),
- * plus every downloadable app from the catalog that has a web home.
- * No login required — doubles as a marketing/directory page.
+ * Platforms — the three core thaypley web surfaces.
+ * Exactly thaypley.com, fam.thaypley.com, werk.thaypley.com.
+ * Apps now live on their own pages (/apps, /dabba, /tabbi, /creative).
  */
 import { h, mount } from '../utils/dom.js';
 import auth from '../sdk.js';
 import { pageTransition, staggerIn } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
+import { FAMILY_LINKS } from '../data/directory.js';
 
 export default async function PlatformsPage(container) {
   const heading = h('div', { className: 'downloads-header' }, [
     h('h2', {}, ['platforms']),
-    h('p', { className: 'subtitle' }, ['every place your thay-auth identity lives']),
+    h('p', { className: 'subtitle' }, ['the thaypley web platform family — one identity, every surface']),
   ]);
 
   const shellEl = h('div', { className: 'platforms-page' });
@@ -22,9 +21,8 @@ export default async function PlatformsPage(container) {
   pageTransition(shell.querySelector('.downloads-page'));
 
   let platforms = [];
-  let apps = [];
   try {
-    [platforms, apps] = await Promise.all([auth.getPlatforms(), auth.getCatalog()]);
+    platforms = await auth.getPlatforms();
   } catch (err) {
     console.error('Failed to load platforms:', err);
     shellEl.appendChild(h('div', { className: 'form-card', style: { textAlign: 'center', gridColumn: '1 / -1' } }, [
@@ -35,17 +33,16 @@ export default async function PlatformsPage(container) {
     return;
   }
 
-  // ─── Web platform family (the core hub) ────────────────────────
-  // OFFICIAL_PLATFORMS from the API. Order preserved: thaypley.com,
-  // fam, werk, du, then auth + docs.
-  const webFamily = platforms.filter((p) => ['web', 'docs'].includes(p.type));
+  // Only the three official web platforms — trimmed from the old roster
+  // (du, auth, docs removed; the app directory moved to /apps).
+  const core = platforms.filter((p) => ['thaypley', 'fam', 'werk'].includes(p.slug));
 
-  const familySection = h('div', {}, [
+  shellEl.appendChild(h('div', {}, [
     h('div', { className: 'section-header' }, [
       h('h3', {}, ['the web platform']),
-      h('span', { className: 'input-hint' }, ['one identity, every surface']),
+      h('span', { className: 'input-hint' }, ['one account. every surface.']),
     ]),
-    h('div', { className: 'catalog-grid' }, webFamily.map((p) => h('a', {
+    h('div', { className: 'catalog-grid' }, core.map((p) => h('a', {
       className: 'catalog-card glass-card platform-card',
       href: p.url,
       target: '_blank',
@@ -58,52 +55,17 @@ export default async function PlatformsPage(container) {
       h('p', { className: 'catalog-card-tagline' }, [p.tagline]),
       h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, ['open ↗']),
     ]))),
-  ]);
-
-  // ─── App directory (everything else with a web home) ───────────
-  const appHomes = apps.filter((a) => a.downloads && (a.downloads.web || a.downloads.mac || a.downloads.windows || a.downloads.linux));
-
-  const appSection = h('div', { style: { marginTop: 'var(--space-2xl)' } }, [
-    h('div', { className: 'section-header' }, [
-      h('h3', {}, ['all thay apps']),
-      h('span', { className: 'input-hint' }, [`${appHomes.length} platforms`]),
-    ]),
-    h('div', { className: 'catalog-grid' }, appHomes.map((app) => {
-      const url = app.downloads.web || app.downloads.mac || app.downloads.windows || app.downloads.linux;
-      return h('a', {
-        className: 'catalog-card glass-card platform-card',
-        href: url,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      }, [
-        h('div', { className: 'app-card-icon', style: { width: '56px', height: '56px', fontSize: '24px', margin: '0 auto' } }, [
-          app.displayName ? app.displayName.replace(/[()]/g, '')[0].toUpperCase() : '?',
-        ]),
-        h('div', { className: 'catalog-card-name' }, [app.displayName]),
-        app.tagline ? h('p', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
-        h('div', { className: 'catalog-card-footer' }, [
-          h('span', { className: 'app-card-badge', style: { background: 'var(--glass-mid)', color: 'var(--vibe-accent)' } }, [
-            app.isFree ? (app.kind || 'free') : (app.price || app.kind || ''),
-          ]),
-          h('span', { className: 'input-hint' }, ['open ↗']),
-        ]),
-      ].filter(Boolean));
-    })),
-  ]);
-
-  shellEl.appendChild(familySection);
-  shellEl.appendChild(appSection);
-
-  // ─── Identity note ─────────────────────────────────────────────
-  shellEl.appendChild(h('div', { className: 'glass-card-static platform-note', style: { marginTop: 'var(--space-2xl)' } }, [
-    h('div', { className: 'section-header' }, [
-      h('h3', {}, ['one identity']),
-      h('span', { className: 'input-hint' }, ['thay-auth']),
-    ]),
-    h('p', { className: 'catalog-card-description' }, [
-      'every platform above is unlocked by the same thay-auth account — your profile, avatar, and devices carry across all of them. change your photo once, it updates everywhere.',
-    ]),
   ]));
 
-  setTimeout(() => staggerIn(shellEl, '.platform-card', 150), 150);
+  shellEl.appendChild(h('div', { className: 'glass-card-static', style: { marginTop: 'var(--space-2xl)' } }, [
+    h('div', { className: 'section-header' }, [
+      h('h3', {}, ['app families']),
+      h('span', { className: 'input-hint' }, ['the rest of the thay universe']),
+    ]),
+    h('div', { className: 'family-nav-row' }, FAMILY_LINKS.map((link) =>
+      h('a', { className: 'platform-chip', href: link.href }, [link.label])
+    )),
+  ]));
+
+  setTimeout(() => staggerIn(shellEl, '.catalog-card, .platform-chip', 150), 150);
 }

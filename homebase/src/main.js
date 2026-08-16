@@ -41,6 +41,11 @@ const DashboardPage = lazy(() => import('./pages/DashboardPage.js'));
 const VerifyPage = lazy(() => import('./pages/VerifyPage.js'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage.js'));
 const DownloadsPage = lazy(() => import('./pages/DownloadsPage.js'));
+const AppsPage = lazy(() => import('./pages/AppsPage.js'));
+const DabbaPage = lazy(() => import('./pages/DabbaPage.js'));
+const TabbiPage = lazy(() => import('./pages/TabbiPage.js'));
+const CreativePage = lazy(() => import('./pages/CreativePage.js'));
+const DevicesPage = lazy(() => import('./pages/DevicesPage.js'));
 const PlatformsPage = lazy(() => import('./pages/PlatformsPage.js'));
 const InvitesPage = lazy(() => import('./pages/InvitesPage.js'));
 const BillingPage = lazy(() => import('./pages/BillingPage.js'));
@@ -115,6 +120,33 @@ route('/profile', async (container) => {
 // Public — no login required, doubles as a marketing page.
 route('/downloads', async (container) => {
   await DownloadsPage(container);
+});
+
+// Public app-family pages — core apps, dabba, tabbi, creative.
+route('/apps', async (container) => {
+  await AppsPage(container);
+});
+
+route('/dabba', async (container) => {
+  await DabbaPage(container);
+});
+
+route('/tabbi', async (container) => {
+  await TabbiPage(container);
+});
+
+route('/creative', async (container) => {
+  await CreativePage(container);
+});
+
+// Device management — paired devices + active sessions (auth-gated).
+route('/devices', async (container) => {
+  if (!hasToken()) {
+    const { navigate } = await import('./router.js');
+    navigate('/login', true);
+    return;
+  }
+  await DevicesPage(container);
 });
 
 // Public directory — the full thay ecosystem launchpad.

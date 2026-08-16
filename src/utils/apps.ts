@@ -6,7 +6,7 @@
  * 2026-08-11 fleet expansion: jot, chronometer, dabba and studio joined
  * the thay-auth universe (tunes/tv/studio were already present).
  */
-export const KNOWN_APPS = ['homebase', 'tunes', 'tv', 'studio', 'savant', 'universe', 'portfolio', 'jot', 'chronometer', 'dabba'] as const;
+export const KNOWN_APPS = ['homebase', 'tunes', 'tv', 'studio', 'savant', 'universe', 'portfolio', 'jot', 'chronometer', 'dabba', 'locker', 'slashcat', 'dabba-root', 'gab', 'tabbi', 'webiverse', 'webispectral', 'design', 'photo', 'video', 'effect', 'pattern'] as const;
 export type AppSlug = typeof KNOWN_APPS[number];
 
 export const DEFAULT_APP: AppSlug = 'homebase';

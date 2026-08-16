@@ -41,26 +41,4 @@ export const OFFICIAL_PLATFORMS: PlatformInfo[] = [
     tagline: 'work & studio operations',
     type: 'web',
   },
-  {
-    slug: 'du',
-    name: 'du.thaypley.com',
-    url: 'https://du.thaypley.com',
-    tagline: 'du — together, the shared space',
-    type: 'web',
-  },
-  // ── Auth-adjacent surfaces ────────────────────────────────────────
-  {
-    slug: 'auth',
-    name: 'auth.thaypley.com',
-    url: 'https://auth.thaypley.com',
-    tagline: 'your thay-auth hub — you are here',
-    type: 'web',
-  },
-  {
-    slug: 'docs',
-    name: 'thaypley docs',
-    url: 'https://thaypley.com/docs',
-    tagline: 'docs & guides for every platform',
-    type: 'docs',
-  },
 ];
