@@ -244,11 +244,12 @@ export class ThayAuth {
     async getSubscription() {
         return this.request('/auth/subscription');
     }
-    /** Create a checkout session for upgrading tiers (Stripe or mock). */
-    async createCheckout(tier) {
+    /** Create a checkout session (Stripe or mock). `target` carries the
+     * new-model membership target: 'base' or 'app:<slug>'. */
+    async createCheckout(tier, target) {
         return this.request('/auth/subscription/checkout', {
             method: 'POST',
-            body: JSON.stringify({ tier }),
+            body: JSON.stringify(target ? { target } : { tier }),
         });
     }
     /** Open the billing portal (cancel / update payment method). */

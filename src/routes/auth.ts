@@ -1359,72 +1359,100 @@ router.get('/catalog', async (_req: Request, res: Response) => {
 // (Stripe/Paddle checkout, webhooks, entitlements) lands behind this
 // contract, so clients never need to change.
 
-const SUBSCRIPTION_TIERS = ['free', 'core', 'plus', 'pro', 'enterprise'] as const;
-type SubscriptionTier = typeof SUBSCRIPTION_TIERS[number];
+// ── thay-sub plan model (2026-08 pivot) ─────────────────────────────
+// There is no free tier anymore: base membership at $5/mo is the entry
+// point, and architect accounts bypass every gate — they move freely
+// across all thay-auth platforms and apps. Tier/perk detail beyond base
+// is still being worked out; the legacy ladder (core/plus/pro/enterprise)
+// keeps paying members' access transitionally via isLegacyPaidTier but
+// is no longer sold from this surface.
 
 export const SUBSCRIPTION_PLANS: Array<{
-  id: SubscriptionTier;
+  id: string;
   name: string;
   monthly: number;
   blurb: string;
   features: string[];
   deviceLimit: number;
+  architect?: boolean;
 }> = [
   {
-    id: 'free',
-    name: 'thay free',
-    monthly: 0,
-    blurb: 'every core surface, one identity',
-    features: ['thaypley(portal) access', '1 device', 'community support'],
-    deviceLimit: 1,
-  },
-  {
-    id: 'core',
-    name: 'thay core',
-    monthly: 6,
-    blurb: 'the everyday creator tier',
-    features: ['everything in free', 'all streaming apps', '5 devices', 'priority support'],
+    id: 'base',
+    name: 'thay base',
+    monthly: 5,
+    blurb: 'the thaypley.com membership',
+    features: ['all thaypley.com platforms', '5 devices', 'community support'],
     deviceLimit: 5,
   },
   {
-    id: 'plus',
-    name: 'thay plus',
-    monthly: 12,
-    blurb: 'for serious makers',
-    features: ['everything in core', 'thaypley(studio)', '10 devices', 'sync across all surfaces'],
-    deviceLimit: 10,
-  },
-  {
-    id: 'pro',
-    name: 'thay pro',
-    monthly: 24,
-    blurb: 'the full creator stack',
-    features: ['everything in plus', 'unlimited devices', 'early features', 'direct line to the studio'],
-    deviceLimit: -1,
-  },
-  {
-    id: 'enterprise',
-    name: 'thay enterprise',
+    id: 'architect',
+    name: 'thay architect',
     monthly: -1,
-    blurb: 'custom fleet & governance',
-    features: ['everything in pro', 'SSO/SAML', 'dedicated support'],
+    blurb: 'unrestricted — every platform & app',
+    features: ['all thay-auth platforms & apps', 'unlimited devices', 'early features', 'direct line to the studio'],
     deviceLimit: -1,
+    architect: true,
   },
 ];
+
+type PublishedPlanId = 'base' | 'architect';
+
+/**
+ * Plans as served by GET /auth/subscription — the base plan gains the
+ * entitlement status/trial fields the page renders (status, source,
+ * trialEnd, trialDaysLeft) when the member is on base.
+ */
+type PlanWithStatus = (typeof SUBSCRIPTION_PLANS)[number] & {
+  status?: 'active' | 'trialing' | 'past_due' | 'none';
+  source?: 'subscription' | 'legacy_tier';
+  trialEnd?: string;
+  trialDaysLeft?: number;
+};
+
+function planById(id: string) {
+  return SUBSCRIPTION_PLANS.find((p) => p.id === id) || null;
+}
+
+/**
+ * Retired legacy ladder. No longer sold (checkout rejects it), but
+ * in-flight Stripe sessions still reconcile to a legacy users.tier, which
+ * entitlements counts as an active base membership transitionally.
+ */
+const LEGACY_TIERS = ['core', 'plus', 'pro', 'enterprise'] as const;
 
 router.get('/subscription', requireUser, async (req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const userId = req.user!.id;
     const user = await getUserData(pb, userId);
+    const isArchitect = Boolean(user.isArchitect);
 
-    const rawTier = (user.tier as string) || 'free';
-    const tier = SUBSCRIPTION_TIERS.includes(rawTier as SubscriptionTier) ? rawTier as SubscriptionTier : 'free';
-    const plan = SUBSCRIPTION_PLANS.find((p) => p.id === tier) || SUBSCRIPTION_PLANS[0];
+    // New-model tier resolution: architect | base (active/trialing) | none.
+    // Base access comes from a membership row or — transitionally — a paid
+    // legacy users.tier (core/plus/pro/enterprise). There is no free tier.
+    const rows = await getSubscriptionRows(pb, userId);
+    const ent = summarizeEntitlements(rows, {
+      isArchitect,
+      legacyTier: String(user.tier || ''),
+    });
+    const baseActive = ent.base.status === 'active' || ent.base.status === 'trialing';
+    const tier: PublishedPlanId | 'none' = isArchitect ? 'architect' : (baseActive ? 'base' : 'none');
 
-    // App purchases from the public catalog + the user's entitlement map.
-    // A user's `app_entitlements` field is a JSON string map:
-    //   { [slug]: 'owned' | 'subscribed' | 'trial' }
+    let plan: PlanWithStatus | null = null;
+    if (isArchitect) {
+      plan = planById('architect');
+    } else if (baseActive) {
+      plan = {
+        ...(planById('base') as NonNullable<ReturnType<typeof planById>>),
+        status: ent.base.status,
+        ...(ent.base.source ? { source: ent.base.source } : {}),
+        ...(ent.base.trialEnd ? { trialEnd: ent.base.trialEnd } : {}),
+        ...(ent.base.trialDaysLeft !== undefined ? { trialDaysLeft: ent.base.trialDaysLeft } : {}),
+      };
+    }
+
+    // App purchases from the public catalog + legacy app_entitlements.
+    // Architects own everything — they move freely across all apps.
     const catalog = await getCatalogApps(pb);
     let entitlements: Record<string, string> = {};
     try {
@@ -1436,12 +1464,13 @@ router.get('/subscription', requireUser, async (req: Request, res: Response) => 
       .filter((a: unknown) => (a as { isFree?: boolean }).isFree === false)
       .map((a: unknown) => {
         const rec = a as { slug: string; displayName: string; price: string };
+        const owned = isArchitect || entitlements[rec.slug] === 'owned' || entitlements[rec.slug] === 'subscribed';
         return {
           slug: rec.slug,
           appName: rec.displayName,
           price: (rec.price === '0' || rec.price === '') ? 'one-time' : (rec.price || 'one-time'),
-          owned: entitlements[rec.slug] === 'owned' || entitlements[rec.slug] === 'subscribed',
-          status: entitlements[rec.slug] || 'none',
+          owned,
+          status: owned ? 'owned' : (entitlements[rec.slug] || 'none'),
         };
       });
 
@@ -1451,14 +1480,9 @@ router.get('/subscription', requireUser, async (req: Request, res: Response) => 
 
     return res.status(200).json({
       tier,
-      plan: {
-        id: plan.id,
-        name: plan.name,
-        monthly: plan.monthly,
-        blurb: plan.blurb,
-        features: plan.features,
-        deviceLimit: plan.deviceLimit,
-      },
+      architect: isArchitect,
+      plan,
+      entitlements: ent,
       purchases,
       // Real checkout/portal URLs now: created lazily by the UI via
       // POST /auth/subscription/checkout + /portal (no keys = mock mode).
@@ -1479,20 +1503,23 @@ router.post('/subscription/checkout', requireUser, async (req: Request, res: Res
     const user = await getUserData(pb, userId);
     const body = req.body as { tier?: string; target?: string };
 
-    // Membership path: target = 'base' ($5/mo thaypley.com) or
-    // 'app:<slug>' (à-la-carte family add-on).
+    // Membership path: base ($5/mo thaypley.com) or 'app:<slug>' add-on.
+    // The UI sends tier:'base'; SDK/other callers may send target:'base'.
     const target = String(body.target || '');
-    if (target === 'base' || target.startsWith('app:')) {
+    const tierArg = String(body.tier || '').toLowerCase();
+    const isBase = target === 'base' || tierArg === 'base';
+    if (isBase || target.startsWith('app:')) {
       if (target.startsWith('app:') && !isValidAppKey(target.slice(4))) {
         return res.status(400).json({ error: 'Invalid app key' });
       }
+      const resolvedTarget = isBase ? 'base' : target;
       const email = (user.email as string) || '';
       const result = await createCheckoutSession({
         userId,
         email,
         tier: '',
-        target: target as 'base' | `app:${string}`,
-        successUrl: `${config.appBaseUrl}/#/billing?checkout=success&target=${encodeURIComponent(target)}`,
+        target: resolvedTarget as 'base' | `app:${string}`,
+        successUrl: `${config.appBaseUrl}/#/billing?checkout=success&target=${encodeURIComponent(resolvedTarget)}`,
         cancelUrl: `${config.appBaseUrl}/#/billing?checkout=cancelled`,
       });
       // Mark intent on the row now; the webhook completes it. If the row
@@ -1500,8 +1527,8 @@ router.post('/subscription/checkout', requireUser, async (req: Request, res: Res
       // passes a gate.
       await upsertSubscriptionRow(pb, {
         userId,
-        kind: target === 'base' ? 'base' : 'app',
-        appKey: target === 'base' ? '' : target.slice(4),
+        kind: isBase ? 'base' : 'app',
+        appKey: isBase ? '' : target.slice(4),
         status: 'incomplete',
         stripeCustomerId: (user.stripe_customer_id as string) || '',
       });
@@ -1509,30 +1536,9 @@ router.post('/subscription/checkout', requireUser, async (req: Request, res: Res
       return res.status(200).json({ url: result.url, mode: result.mode, sessionId: result.sessionId });
     }
 
-    // Legacy ladder path.
-    const targetTier = String(body.tier || '').toLowerCase();
-    if (!SUBSCRIPTION_TIERS.includes(targetTier as SubscriptionTier)) {
-      return res.status(400).json({ error: 'Invalid tier' });
-    }
-    if (targetTier === 'free') {
-      return res.status(400).json({ error: 'Free tier has no checkout' });
-    }
-    const email = (user.email as string) || '';
-    const result = await createCheckoutSession({
-      userId,
-      email,
-      tier: targetTier,
-      successUrl: `${config.appBaseUrl}/#/billing?checkout=success&tier=${targetTier}`,
-      cancelUrl: `${config.appBaseUrl}/#/billing?checkout=cancelled`,
-    });
-    // Remember the pending upgrade so the webhook can reconcile it even
-    // if the client navigates away mid-checkout.
-    await pb.collection('users').update(userId, {
-      pending_tier: targetTier,
-      pending_session: result.sessionId,
-    }).catch(() => undefined);
-    invalidateUserCache(userId);
-    return res.status(200).json({ url: result.url, mode: result.mode, sessionId: result.sessionId });
+    // The legacy ladder (core/plus/pro/enterprise) is retired and there is
+    // no free tier — base membership is the only plan sold from here.
+    return res.status(400).json({ error: 'Invalid plan — thay base ($5/mo) is the only paid tier' });
   } catch (err) {
     logger.error('/subscription/checkout POST error:', err);
     return res.status(500).json({ error: 'Failed to create checkout session' });
@@ -1799,7 +1805,7 @@ router.post('/webhook', async (req: Request, res: Response) => {
         const tier = String(data.metadata?.tier || user.pending_tier || 'pro');
         const subId = String(data.subscription || data.id || user.stripe_subscription_id || '');
         const customerId = String(data.customer || user.stripe_customer_id || '');
-        const finalTier = SUBSCRIPTION_TIERS.includes(tier as SubscriptionTier) ? tier as SubscriptionTier : 'pro';
+        const finalTier = LEGACY_TIERS.includes(tier as (typeof LEGACY_TIERS)[number]) ? tier : 'pro';
         await pb.collection('users').update(userId, {
           tier: finalTier,
           stripe_customer_id: customerId,
