@@ -865,6 +865,22 @@
   padding-bottom: var(--space-2xl);
 }
 
+/* Skeleton panels shown while the dashboard's profile/apps/devices
+   fetches are in flight — shimmer pulse instead of a blank page. */
+.dashboard-grid--loading .glass-card,
+.dashboard-grid--loading .glass-card-static {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(100deg, var(--glass-mid, rgba(255,255,255,.55)) 40%, rgba(255,255,255,.92) 50%, var(--glass-mid, rgba(255,255,255,.55)) 60%);
+  background-size: 200% 100%;
+  animation: dashboard-shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes dashboard-shimmer {
+  0%   { background-position: 120% 0; }
+  100% { background-position: -80% 0; }
+}
+
 .dashboard-panel {
   display: flex;
   flex-direction: column;

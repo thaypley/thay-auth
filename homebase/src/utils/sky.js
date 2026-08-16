@@ -13,64 +13,120 @@
  * so auth pages stay calm — only the dashboard enables it.
  */
 
+// The static starfield + cloud layers are raw CSS strings built once at
+// module load. Runtime is zero-cost: matched-position gradient layers are
+// painted by the compositor, not JS.
+const STARS_CSS = [
+  'radial-gradient(1px 1px at 5% 8%,rgba(255,255,255,.95) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 10% 15%,rgba(255,255,255,.9) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 18% 4%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 25% 12%,rgba(255,255,255,.85) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 30% 8%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 38% 18%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 44% 6%,rgba(255,255,255,.65) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 50% 14%,rgba(255,255,255,.9) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 55% 20%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 62% 9%,rgba(255,255,255,.75) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 68% 3%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 72% 16%,rgba(255,255,255,.9) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 75% 5%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 80% 11%,rgba(255,255,255,.85) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 85% 7%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 88% 25%,rgba(255,255,255,.9) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 92% 13%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 96% 6%,rgba(255,255,255,.65) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 14% 28%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 20% 35%,rgba(255,255,255,.75) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 28% 42%,rgba(255,255,255,.5) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 35% 30%,rgba(255,255,255,.65) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 42% 38%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 48% 26%,rgba(255,255,255,.55) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 56% 44%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 63% 32%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 70% 48%,rgba(255,255,255,.75) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 77% 36%,rgba(255,255,255,.85) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 83% 52%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 90% 40%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 16% 62%,rgba(255,255,255,.65) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 33% 58%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 50% 70%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 60% 64%,rgba(255,255,255,.55) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 74% 72%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 80% 65%,rgba(255,255,255,.75) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 88% 78%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 22% 82%,rgba(255,255,255,.5) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 40% 88%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(2px 2px at 58% 85%,rgba(255,255,255,.7) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 15% 80%,rgba(255,255,255,.5) 0%,transparent 100%)',
+  'radial-gradient(1.5px 1.5px at 70% 85%,rgba(255,255,255,.8) 0%,transparent 100%)',
+  'radial-gradient(1px 1px at 35% 90%,rgba(255,255,255,.6) 0%,transparent 100%)',
+  'radial-gradient(2.5px 2.5px at 3% 33%,rgba(255,255,255,.9) 0%,transparent 100%)',
+  'radial-gradient(2.5px 2.5px at 47% 55%,rgba(255,255,255,.85) 0%,transparent 100%)',
+  'radial-gradient(2.5px 2.5px at 93% 28%,rgba(255,255,255,.9) 0%,transparent 100%)',
+].join(',');
+
+const STARS_PSEUDO_CSS = `
+  @keyframes cloud-drift {
+    0%   { transform:translateX(-420px); opacity:0; }
+    8%   { opacity:var(--cloud-opacity,.5); }
+    92%  { opacity:var(--cloud-opacity,.5); }
+    100% { transform:translateX(calc(100vw + 420px)); opacity:0; }
+  }
+  @keyframes tp-twinkle {
+    0%,100% { opacity:.9; }
+    50%     { opacity:.25; }
+  }
+  #tp-stars::before {
+    content:'';
+    position:absolute;inset:0;
+    background-image:
+      radial-gradient(2px 2px at 12% 10%,rgba(255,255,255,.95) 0%,transparent 100%),
+      radial-gradient(2px 2px at 45% 22%,rgba(255,255,255,.9) 0%,transparent 100%),
+      radial-gradient(2.5px 2.5px at 67% 8%,rgba(255,255,255,.95) 0%,transparent 100%),
+      radial-gradient(2px 2px at 88% 18%,rgba(255,255,255,.85) 0%,transparent 100%),
+      radial-gradient(2px 2px at 23% 55%,rgba(255,255,255,.8) 0%,transparent 100%),
+      radial-gradient(2.5px 2.5px at 58% 60%,rgba(255,255,255,.9) 0%,transparent 100%),
+      radial-gradient(2px 2px at 78% 72%,rgba(255,255,255,.85) 0%,transparent 100%);
+    animation: tp-twinkle 9s ease-in-out infinite;
+    pointer-events:none;
+  }
+  #tp-stars::after {
+    content:'';
+    position:absolute;inset:0;
+    background-image:
+      radial-gradient(1.5px 1.5px at 8% 42%,rgba(255,255,255,.8) 0%,transparent 100%),
+      radial-gradient(2px 2px at 33% 15%,rgba(255,255,255,.9) 0%,transparent 100%),
+      radial-gradient(1.5px 1.5px at 52% 48%,rgba(255,255,255,.75) 0%,transparent 100%),
+      radial-gradient(2px 2px at 71% 35%,rgba(255,255,255,.85) 0%,transparent 100%),
+      radial-gradient(1.5px 1.5px at 91% 55%,rgba(255,255,255,.8) 0%,transparent 100%),
+      radial-gradient(2px 2px at 15% 75%,rgba(255,255,255,.75) 0%,transparent 100%),
+      radial-gradient(2px 2px at 44% 82%,rgba(255,255,255,.85) 0%,transparent 100%);
+    animation: tp-twinkle 13s ease-in-out infinite;
+    animation-delay: -2.1s;
+    pointer-events:none;
+  }
+`;
+
+// Small DOM builder that only handles the tag/class/style shape used here —
+// keeps the module import-free (sky.js is on the boot path).
+function skyEl(tag, cls, cssText) {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (cssText) el.style.cssText = cssText;
+  return el;
+}
+
 export function buildPlatformSky() {
   if (document.getElementById('tp-sky')) { return; } // already mounted
 
-  const sky = document.createElement('div');
+  // The static starfield background (44 gradient stops) is a single
+  // pre-built CSS string — set once, never touched again.
+  const sky = skyEl('div', null, 'position:fixed;inset:0;z-index:-2;transition:background 4s ease;');
   sky.id = 'tp-sky';
-  sky.style.cssText = 'position:fixed;inset:0;z-index:-2;transition:background 4s ease;';
   document.body.appendChild(sky);
 
-  const stars = document.createElement('div');
+  const stars = skyEl('div', null, `position:fixed;inset:0;z-index:-1;opacity:0;transition:opacity 3s ease;pointer-events:none;background-image:${STARS_CSS}`);
   stars.id = 'tp-stars';
-  stars.style.cssText = 'position:fixed;inset:0;z-index:-1;opacity:0;transition:opacity 3s ease;pointer-events:none;background-image:' +
-    'radial-gradient(1px 1px at 5% 8%,rgba(255,255,255,.95) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 10% 15%,rgba(255,255,255,.9) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 18% 4%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 25% 12%,rgba(255,255,255,.85) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 30% 8%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 38% 18%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 44% 6%,rgba(255,255,255,.65) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 50% 14%,rgba(255,255,255,.9) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 55% 20%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 62% 9%,rgba(255,255,255,.75) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 68% 3%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 72% 16%,rgba(255,255,255,.9) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 75% 5%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 80% 11%,rgba(255,255,255,.85) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 85% 7%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 88% 25%,rgba(255,255,255,.9) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 92% 13%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 96% 6%,rgba(255,255,255,.65) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 14% 28%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 20% 35%,rgba(255,255,255,.75) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 28% 42%,rgba(255,255,255,.5) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 35% 30%,rgba(255,255,255,.65) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 42% 38%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 48% 26%,rgba(255,255,255,.55) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 56% 44%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 63% 32%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 70% 48%,rgba(255,255,255,.75) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 77% 36%,rgba(255,255,255,.85) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 83% 52%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 90% 40%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 7% 55%,rgba(255,255,255,.5) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 16% 62%,rgba(255,255,255,.65) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 33% 58%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 50% 70%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 60% 64%,rgba(255,255,255,.55) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 74% 72%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 80% 65%,rgba(255,255,255,.75) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 88% 78%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 22% 82%,rgba(255,255,255,.5) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 40% 88%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(2px 2px at 58% 85%,rgba(255,255,255,.7) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 15% 80%,rgba(255,255,255,.5) 0%,transparent 100%),' +
-    'radial-gradient(1.5px 1.5px at 70% 85%,rgba(255,255,255,.8) 0%,transparent 100%),' +
-    'radial-gradient(1px 1px at 35% 90%,rgba(255,255,255,.6) 0%,transparent 100%),' +
-    'radial-gradient(2.5px 2.5px at 3% 33%,rgba(255,255,255,.9) 0%,transparent 100%),' +
-    'radial-gradient(2.5px 2.5px at 47% 55%,rgba(255,255,255,.85) 0%,transparent 100%),' +
-    'radial-gradient(2.5px 2.5px at 93% 28%,rgba(255,255,255,.9) 0%,transparent 100%)';
   document.body.appendChild(stars);
 
   // Each phase carries:
@@ -113,12 +169,11 @@ export function buildPlatformSky() {
 
   // Spawn clouds using the thaypley cloud sprite (shared brand asset).
   for (let i = 0; i < 4; i++) {
-    const el = document.createElement('div');
-    el.className = 'tp-cloud';
+    const el = skyEl('div', 'tp-cloud', 'position:fixed;pointer-events:none;z-index:-1;opacity:0;');
     const w = 120 + Math.random() * 200;
     const top = 2 + Math.random() * 35;
     const dur = 120 + Math.random() * 90;
-    el.style.cssText = 'position:fixed;pointer-events:none;z-index:-1;opacity:0;' +
+    el.style.cssText = `position:fixed;pointer-events:none;z-index:-1;opacity:0;` +
       `top:${top}%;width:${w}px;` +
       `animation:cloud-drift ${dur}s linear infinite;` +
       `animation-delay:-${Math.random() * dur}s;`;
@@ -134,47 +189,7 @@ export function buildPlatformSky() {
   if (!document.getElementById('tp-sky-style')) {
     const s = document.createElement('style');
     s.id = 'tp-sky-style';
-    s.textContent = `
-      @keyframes cloud-drift {
-        0%   { transform:translateX(-420px); opacity:0; }
-        8%   { opacity:var(--cloud-opacity,.5); }
-        92%  { opacity:var(--cloud-opacity,.5); }
-        100% { transform:translateX(calc(100vw + 420px)); opacity:0; }
-      }
-      @keyframes tp-twinkle {
-        0%,100% { opacity:.9; }
-        50%     { opacity:.25; }
-      }
-      #tp-stars::before {
-        content:'';
-        position:absolute;inset:0;
-        background-image:
-          radial-gradient(2px 2px at 12% 10%,rgba(255,255,255,.95) 0%,transparent 100%),
-          radial-gradient(2px 2px at 45% 22%,rgba(255,255,255,.9) 0%,transparent 100%),
-          radial-gradient(2.5px 2.5px at 67% 8%,rgba(255,255,255,.95) 0%,transparent 100%),
-          radial-gradient(2px 2px at 88% 18%,rgba(255,255,255,.85) 0%,transparent 100%),
-          radial-gradient(2px 2px at 23% 55%,rgba(255,255,255,.8) 0%,transparent 100%),
-          radial-gradient(2.5px 2.5px at 58% 60%,rgba(255,255,255,.9) 0%,transparent 100%),
-          radial-gradient(2px 2px at 78% 72%,rgba(255,255,255,.85) 0%,transparent 100%);
-        animation: tp-twinkle 9s ease-in-out infinite;
-        pointer-events:none;
-      }
-      #tp-stars::after {
-        content:'';
-        position:absolute;inset:0;
-        background-image:
-          radial-gradient(1.5px 1.5px at 8% 42%,rgba(255,255,255,.8) 0%,transparent 100%),
-          radial-gradient(2px 2px at 33% 15%,rgba(255,255,255,.9) 0%,transparent 100%),
-          radial-gradient(1.5px 1.5px at 52% 48%,rgba(255,255,255,.75) 0%,transparent 100%),
-          radial-gradient(2px 2px at 71% 35%,rgba(255,255,255,.85) 0%,transparent 100%),
-          radial-gradient(1.5px 1.5px at 91% 55%,rgba(255,255,255,.8) 0%,transparent 100%),
-          radial-gradient(2px 2px at 15% 75%,rgba(255,255,255,.75) 0%,transparent 100%),
-          radial-gradient(2px 2px at 44% 82%,rgba(255,255,255,.85) 0%,transparent 100%);
-        animation: tp-twinkle 13s ease-in-out infinite;
-        animation-delay: -2.1s;
-        pointer-events:none;
-      }
-    `;
+    s.textContent = STARS_PSEUDO_CSS;
     document.head.appendChild(s);
   }
 
@@ -270,6 +285,14 @@ export function mountWeather() {
 
   let _wxParticles = [];
   let _wxLast = null;
+  let _wxTimer = null;
+  // Teardown race guard: geolocation's getCurrentPosition resolves
+  // asynchronously, possibly AFTER the router already called stopWeather()
+  // (e.g. navigating off the dashboard in the first 8s). Without this flag
+  // the late callback would spawn a polling timer and orphan DOM that never
+  // gets torn down. The guard makes stopWeather BEFORE the callback and
+  // AFTER it behave identically — a leak-proof no-op either way.
+  let _stopped = false;
 
   function clearWeatherParticles() {
     _wxParticles.forEach(el => el.remove());
@@ -282,7 +305,7 @@ export function mountWeather() {
       const d = document.createElement('div');
       d.className = 'tp-rain-drop';
       const height = heavy ? (18 + Math.random() * 22) : (12 + Math.random() * 14);
-      const dur = heavy ? (0.55 + Math.random() * 0.35) : (0.8 + Math.random() * 0.5);
+      const dur = heavy ? (0.55 + Math.random() * 0.35) : (0.8 + Math.random() * 0.6);
       d.style.cssText =
         `left:${Math.random() * 102 - 1}%;` +
         `top:${-Math.random() * 15}%;` +
@@ -312,6 +335,7 @@ export function mountWeather() {
   }
 
   function applyWeather(overlayKey) {
+    if (_stopped) return;
     if (overlayKey === _wxLast) { return; }
     _wxLast = overlayKey;
     clearWeatherParticles();
@@ -324,6 +348,7 @@ export function mountWeather() {
   }
 
   async function fetchWeather(lat, lon) {
+    if (_stopped) return;
     try {
       // Server-side proxy (GET /auth/weather) — the browser makes zero
       // third-party requests, so ERR_BLOCKED_BY_CLIENT is impossible.
@@ -333,10 +358,13 @@ export function mountWeather() {
     } catch (_) { /* silently skip on network error */ }
   }
 
-  let _wxTimer = null;
   function startWeatherPolling(lat, lon) {
+    if (_stopped) return; // late geolocation callback after teardown
     fetchWeather(lat, lon);
-    _wxTimer = setInterval(() => fetchWeather(lat, lon), 15 * 60 * 1000);
+    _wxTimer = setInterval(() => {
+      if (_stopped) { clearInterval(_wxTimer); _wxTimer = null; return; }
+      fetchWeather(lat, lon);
+    }, 15 * 60 * 1000);
   }
 
   if (navigator.geolocation) {
@@ -350,6 +378,7 @@ export function mountWeather() {
   // Router cleanup: stop the poll, clear the DOM, and remove the injected
   // style so a later visit starts fresh (and Tauri never re-prompts).
   return function stopWeather() {
+    _stopped = true;
     if (_wxTimer) { clearInterval(_wxTimer); _wxTimer = null; }
     clearWeatherParticles();
     weatherEl.remove();

@@ -1171,6 +1171,10 @@ router.get('/catalog', async (_req: Request, res: Response) => {
   try {
     const pb = await getAdminPb();
     const apps = await getCatalogApps(pb);
+    // Public, read-only catalog: let the browser/CDN cache it (the server
+    // already stale-while-revalidates behind getCatalogApps). Repeat
+    // dashboard loads skip the network entirely.
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     return res.status(200).json({ apps });
   } catch (err) {
     logger.error('/catalog GET error:', err);
@@ -1851,6 +1855,9 @@ router.delete('/apps/:appId', requireUser, async (req: Request, res: Response) =
 
 router.get('/platforms', async (_req: Request, res: Response) => {
   try {
+    // Static directory data — cache aggressively at the CDN/browser so
+    // the dashboard's platform strip never costs a server round trip.
+    res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=1800');
     return res.status(200).json({ platforms: OFFICIAL_PLATFORMS });
   } catch (err) {
     logger.error('/platforms error:', err);

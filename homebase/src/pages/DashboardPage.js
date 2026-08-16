@@ -62,10 +62,31 @@ export default async function DashboardPage(container) {
     mount(container, h('div', {}, [NavBar(), h('div', { className: 'auth-page' }, [errorCard])]));
   }
 
-  // Load profile if not loaded. Profile is load-bearing (identity); apps and
-  // devices are independent panels — a hiccup in one must never take down
-  // the whole dashboard (the prior all-or-nothing Promise.all did exactly
-  // that: a single /devices 500 rendered the full-page error card).
+  // ─── First paint: mount the nav + placeholder panels IMMEDIATELY so the
+  // dashboard is never a blank screen while the profile/apps/devices/platforms
+  // fetches are in flight. The previous flow awaited /auth/profile, then
+  // /auth/apps + /auth/devices, then /auth/platforms — three sequential RTTs
+  // before ANY dom node existed. Now the shell paints with zero network.
+  mount(container, h('div', {}, [
+    NavBar(),
+    h('div', { className: 'dashboard', 'aria-busy': 'true' }, [
+      h('div', { className: 'dashboard-grid dashboard-grid--loading', style: { opacity: 0.7 } }, [
+        h('div', { className: 'dashboard-panel' }, [
+          h('div', { className: 'glass-card profile-card', style: { height: '180px' } }),
+        ]),
+        h('div', { className: 'dashboard-panel' }, [
+          h('div', { className: 'glass-card-static', style: { height: '84px', marginBottom: '16px' } }),
+          h('div', { className: 'glass-card-static', style: { height: '220px' } }),
+        ]),
+      ]),
+    ]),
+  ]));
+
+  // Load profile if not loaded. Profile is load-bearing (identity + the
+  // verified-email gate); apps, devices and the platform strip are independent
+  // panels — a hiccup in one must never take down the whole dashboard (the
+  // prior all-or-nothing Promise.all did exactly that: a single /devices 500
+  // rendered the full-page error card).
   let state = getState();
   if (!state.profile) {
     try {
@@ -93,28 +114,6 @@ export default async function DashboardPage(container) {
       showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load", err.code, err.retryAfter);
       return;
     }
-
-    // Non-fatal: apps/devices load in parallel, each failing independently
-    // to an empty/relaxed panel instead of a full-page crash.
-    const [apps, devices] = await Promise.allSettled([
-      auth.getApps(),
-      auth.listDevices(),
-    ]);
-    const devicesRejected = devices.status === 'rejected';
-    const appsRejected = apps.status === 'rejected';
-    if (devicesRejected || appsRejected) {
-      console.warn('non-fatal panel load failure', {
-        apps: appsRejected ? apps.reason : undefined,
-        devices: devicesRejected ? devices.reason : undefined,
-      });
-    }
-    setState({
-      apps: apps.status === 'fulfilled' ? apps.value : [],
-      devices: devices.status === 'fulfilled' ? devices.value : [],
-      // The dashboard renders a visible retry chip + live/expired dots below.
-      _appsHiccup: appsRejected,
-      _devicesHiccup: devicesRejected,
-    });
     state = getState();
   }
 
@@ -124,8 +123,39 @@ export default async function DashboardPage(container) {
     navigate('/verify', true);
     return;
   }
+
+  // ─── Parallel panel fetches ───────────────────────────────────────
+  // apps/devices/platforms have zero interdependency and none block the
+  // identity gate above. Loading them together (instead of the old
+  // sequential profile → apps/devices → platforms chain) removes two
+  // network round trips from the first meaningful paint, and
+  // Promise.allSettled keeps each panel's failure isolated.
+  const [appsResult, devicesResult, platformsResult] = await Promise.allSettled([
+    state.apps ? Promise.resolve(state.apps) : auth.getApps(),
+    state.devices ? Promise.resolve(state.devices) : auth.listDevices(),
+    state._platforms ? Promise.resolve(state._platforms) : auth.getPlatforms(),
+  ]);
+  const devicesRejected = devicesResult.status === 'rejected';
+  const appsRejected = appsResult.status === 'rejected';
+  if (devicesRejected || appsRejected) {
+    console.warn('non-fatal panel load failure', {
+      apps: appsRejected ? appsResult.reason : undefined,
+      devices: devicesRejected ? devicesResult.reason : undefined,
+    });
+  }
+  setState({
+    apps: appsResult.status === 'fulfilled' ? appsResult.value : (state.apps || []),
+    devices: devicesResult.status === 'fulfilled' ? devicesResult.value : (state.devices || []),
+    _platforms: platformsResult.status === 'fulfilled' ? platformsResult.value : (state._platforms || []),
+    // The dashboard renders a visible retry chip + live/expired dots below.
+    _appsHiccup: appsRejected,
+    _devicesHiccup: devicesRejected,
+  });
+  state = getState();
+
   const apps = state.apps || [];
   const devices = state.devices || [];
+  const platformLinks = state._platforms || [];
 
   // Everything below can throw on an unexpected/malformed profile record
   // (e.g. an empty username from an in-progress backend migration) — the
@@ -273,11 +303,6 @@ export default async function DashboardPage(container) {
     // ─── Platform Strip (quick links to the thay web family) ──────
     // Best-effort: if the directory API hiccups, the dashboard still
     // renders — links are decorative shortcuts, never load-bearing.
-    let platformLinks = [];
-    try {
-      platformLinks = await auth.getPlatforms();
-    } catch { /* non-fatal */ }
-
     const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk', 'du'].includes(p.slug));
     const platformChips = [
       ...corePlatforms.map((p) => h('a', {
