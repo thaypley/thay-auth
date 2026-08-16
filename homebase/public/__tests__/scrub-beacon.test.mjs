@@ -57,3 +57,18 @@ describe('thayScrubBeaconHtml (Cloudflare edge-injected analytics beacon)', () =
     expect(strip(html)).toBe('');
   });
 });
+
+describe('service worker fetch handler (body-lock regression)', () => {
+  const swFiles = ['sw.js', 'sw-v2.js'];
+
+  it.each(swFiles)('%s never returns the original Response after res.text()', (file) => {
+    const src = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
+    // The original body is consumed+locked by res.text(); returning it to
+    // event.respondWith() throws "a Response whose body is locked cannot be
+    // used to respond" → network-error page load on / (observed when CF
+    // injects no beacon, so cleaned === html).
+    expect(src).not.toContain('if (cleaned === html) return res;');
+    // And the safe path must rebuild the Response unconditionally.
+    expect(src).toContain('return new Response(cleaned');
+  });
+});

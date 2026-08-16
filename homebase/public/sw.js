@@ -30,7 +30,13 @@ self.addEventListener('fetch', (event) => {
       if (!type.includes('text/html')) return res;
       return res.text().then((html) => {
         const cleaned = self.thayScrubBeaconHtml(html);
-        if (cleaned === html) return res;
+        // Always rebuild the Response — res.text() has already consumed
+        // and locked the original body, so returning `res` here throws
+        // "a Response whose body is locked cannot be used to respond",
+        // a network-error page load on / whenever CF injects no beacon
+        // (cleaned === html). The header scrubber already strips
+        // content-encoding/content-length, so the rebuilt Response is
+        // byte-correct either way.
         return new Response(cleaned, {
           status: res.status,
           statusText: res.statusText,
