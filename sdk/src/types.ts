@@ -132,7 +132,7 @@ export interface Entitlements {
   base: EntitlementStatus;
   apps: Record<string, EntitlementStatus>;
   /**
-   * true while the account is mid-trial: the 14-day free test spreads
+   * true while the account is mid-trial: the 30-day free test spreads
    * across every platform AND every app — clients may render the whole
    * family unlocked without enumerating app rows.
    */

@@ -1592,7 +1592,7 @@ router.post('/subscription/cancel', requireUser, async (req: Request, res: Respo
 });
 
 // ─── Membership: base paywall + app add-ons (2026-08 pivot) ─────────
-// $5/mo base membership gates thaypley.com (14-day trial first); app
+// $5/mo base membership gates thaypley.com (30-day trial first); app
 // add-ons unlock other thay apps à la carte. Architects bypass every
 // gate. The `subscriptions` collection is canonical; users.tier is read
 // transitionally until the legacy ladder retires.

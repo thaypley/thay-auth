@@ -4,9 +4,9 @@
  *
  * Model (2026-08 pivot):
  *   - architect accounts: god-mode, bypass every gate.
- *   - base membership ($5/mo, 14-day trial first) gates thaypley.com.
+ *   - base membership ($5/mo, 30-day trial first) gates thaypley.com.
  *   - app add-ons (à la carte, per catalog slug) unlock other thay apps.
- *   - the 14-day base trial is the FREE TEST POINT — it spreads across
+ *   - the 30-day base trial is the FREE TEST POINT — it spreads across
  *     every platform AND every app: a trialing account unlocks the whole
  *     family for the trial window, then the per-platform/per-app gates
  *     take over (trialCoversAll pinpoints this for clients).
@@ -17,7 +17,7 @@
  * every status transition without a running PocketBase.
  */
 
-export const BASE_TRIAL_DAYS = 14;
+export const BASE_TRIAL_DAYS = 30;
 export const BASE_MONTHLY_CENTS = 500;
 
 export interface SubscriptionRow {
@@ -43,7 +43,7 @@ export interface Entitlements {
   base: EntitlementStatus;
   apps: Record<string, EntitlementStatus>;
   /**
-   * true while the account is mid-trial: the 14-day free test spreads
+   * true while the account is mid-trial: the 30-day free test spreads
    * across every platform AND every app — clients may render the whole
    * family unlocked without enumerating app rows.
    */
@@ -121,7 +121,7 @@ export function summarizeEntitlements(
     architect,
     base,
     apps,
-    // The 14-day trial is the free test point — every platform/app is
+    // The 30-day trial is the free test point — every platform/app is
     // unlocked for the trial window, not just the base gate.
     ...(base.status === 'trialing' ? { trialCoversAll: true } : {}),
   };

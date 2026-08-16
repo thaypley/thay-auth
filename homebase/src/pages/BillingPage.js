@@ -128,7 +128,7 @@ export default async function BillingPage(container) {
       : (plan.name || 'thay base');
   const planBlurb =
     plan && plan.status === 'trialing'
-      ? '14-day free test — every platform & app unlocked'
+      ? '30-day free test — every platform & app unlocked'
       : !plan
         ? 'every surface now starts with thay base at $5/mo.'
         : (plan.blurb || '');

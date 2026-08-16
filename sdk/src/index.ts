@@ -284,7 +284,7 @@ export class ThayAuth {
   /**
    * Gate verdict for thaypley.com — and every platform, mid-trial.
    * Resolves when the account is an architect, holds an active base
-   * membership, or is mid-trial. The 14-day trial is the free test
+   * membership, or is mid-trial. The 30-day trial is the free test
    * point and spreads across ALL platforms and apps (see
    * entitlements.trialCoversAll). Rejects with the entitlement snapshot
    * attached (err.entitlements) so callers can render trialDaysLeft /
@@ -297,7 +297,7 @@ export class ThayAuth {
   }
 
   /**
-   * One 14-day trial per account, forever. Starts the free test point,
+   * One 30-day trial per account, forever. Starts the free test point,
    * which unlocks every platform AND every app for the trial window
    * (entitlements.trialCoversAll). Re-invocation reports the existing
    * state instead of restarting the clock.

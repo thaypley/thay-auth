@@ -46,7 +46,7 @@ describe('summarizeEntitlements', () => {
     expect(baseEntitled(eExp)).toBe(false);
   });
 
-  it('the 14-day trial is the free test point — it spreads across ALL platforms AND apps', () => {
+  it('the 30-day trial is the free test point — it spreads across ALL platforms AND apps', () => {
     const live: SubscriptionRow[] = [{ kind: 'base', status: 'trialing', trialEnd: inDays(10) }];
     const e = summarizeEntitlements(live, { legacyTier: 'free', now: NOW });
     expect(e.trialCoversAll).toBe(true);
@@ -131,8 +131,8 @@ describe('summarizeEntitlements', () => {
     expect(e.apps).toEqual({});
   });
 
-  it('trial length is 14 days per the pivot decision', () => {
-    expect(BASE_TRIAL_DAYS).toBe(14);
+  it('trial length is 30 days for main thaypley.com platform access', () => {
+    expect(BASE_TRIAL_DAYS).toBe(30);
   });
 });
 
