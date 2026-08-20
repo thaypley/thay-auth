@@ -1277,8 +1277,20 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
     }
 
     if (Object.keys(profilePatch).length > 0) {
+      // Only write columns that actually exist in the shared users table.
+      // The PKB users schema grows over time (platform fields land before
+      // thay-auth knows about them), so blindly PATCHing a missing column
+      // is a silent no-op on PB's side and can 422 on strict instances.
       try {
-        await pb.collection('users').update(userId, profilePatch);
+        const usersCol = await pb.collection('users').getOne(userId);
+        const knownFields = new Set(Object.keys(usersCol as Record<string, unknown>));
+        const safePatch: Record<string, string | number | boolean> = {};
+        for (const [k, v] of Object.entries(profilePatch)) {
+          if (knownFields.has(k)) safePatch[k] = v;
+        }
+        if (Object.keys(safePatch).length > 0) {
+          await pb.collection('users').update(userId, safePatch);
+        }
       } catch (patchErr) {
         logger.error('/profile PATCH users update error:', patchErr);
       }
