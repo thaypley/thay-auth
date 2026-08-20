@@ -130,7 +130,7 @@ function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
     // Deep identity fields — thay-auth is the single source of truth.
     // These round-trip through the shared users record so the auth portal
     // (homebase) can render and edit them exactly like thaypley.com does.
-    displayName: record.displayName || '',
+    displayName: record.displayName || record.name || '',
     website: record.website || '',
     socialLinks: record.socialLinks || '',
     location: record.location || '',
