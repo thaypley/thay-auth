@@ -2,82 +2,48 @@
  * AccountDrawer — right-side account + platform switcher, ported from
  * thaypley-ui/src/components/AccountDrawer.tsx to vanilla JS for homebase.
  *
- * Square brand tiles for the three web platforms — (pley) (fam) (werk) —
- * each firing the thay-auth relay before navigating to its subdomain.
- * Below: the multi-account switcher (localStorage-backed, same shape as
- * thaypley.com's tp_accounts but origin-scoped to thay-auth's own store),
- * add-account, thay-auth info links, and logout / sign-out-all.
+ * Square brand tiles for the five web platforms — (pley) (fam) (werk)
+ * (tunes) (tv) — each firing the thay-auth relay before navigating to its
+ * subdomain. Below: the multi-account switcher (localStorage-backed, same
+ * shape as thaypley.com's tp_accounts but origin-scoped to thay-auth's own
+ * store), add-account, thay-auth info links, and logout / sign-out-all.
  *
  * The theme has no sky-override toggle — the sky is auto-only in homebase —
  * so that row from the pley drawer is omitted here.
+ *
+ * Account storage lives in utils/accounts.js — the same module LoginPage's
+ * add-account flow uses — so slot semantics stay identical everywhere.
  */
 import { h } from '../utils/dom.js';
 import auth from '../sdk.js';
 import { navigate } from '../router.js';
 import { getState, setState } from '../store.js';
-
-const ACCOUNTS_KEY = 'thay_auth_accounts';
-const TOKEN_KEY = 'thay_homebase_token';
+import {
+  ensureStoredAccount,
+  switchToAccount,
+  writeAccounts,
+  clearAllAccounts,
+} from '../utils/accounts.js';
 
 const PLATFORM_TABS = [
   { id: 'pley', label: '(pley)', host: 'https://thaypley.com' },
   { id: 'fam', label: '(fam)', host: 'https://fam.thaypley.com' },
   { id: 'werk', label: '(werk)', host: 'https://werk.thaypley.com' },
+  { id: 'tunes', label: '(tunes)', host: 'https://tunes.thaypley.com' },
+  { id: 'tv', label: '(tv)', host: 'https://tv.thaypley.com' },
 ];
-
-function readAccounts() {
-  try {
-    return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || '[]');
-  } catch {
-    return [];
-  }
-}
-
-function writeAccounts(accounts) {
-  try {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
-  } catch {
-    /* private mode */
-  }
-}
 
 function currentUser() {
   const state = getState();
   return state.user || state.profile || null;
 }
 
-function ensureCurrentAccount(user) {
-  const accounts = readAccounts();
-  if (!user) return accounts;
-  const token = auth.getToken();
-  const idx = accounts.findIndex((a) => a.id === user.id);
-  const entry = { id: user.id, username: user.username, avatar: user.avatar || '', token: token || '' };
-  if (idx >= 0) {
-    accounts[idx] = { ...accounts[idx], ...entry };
-  } else {
-    accounts.push(entry);
+function switchAndReload(accounts, user, id) {
+  if (switchToAccount(accounts, user, id)) {
+    setState({ user: null, profile: null, apps: [], devices: [] });
+    window.location.hash = '/';
+    window.location.reload();
   }
-  writeAccounts(accounts);
-  return accounts;
-}
-
-function switchToAccount(accounts, user, id) {
-  if (!user || id === user.id) return;
-  const current = accounts.find((a) => a.id === user.id);
-  const next = accounts.find((a) => a.id === id);
-  if (!next) return;
-  if (current && auth.getToken()) {
-    writeAccounts(accounts.map((a) => (a.id === user.id ? { ...a, token: auth.getToken() } : a)));
-  }
-  // Swap the active token then reload — the router boots straight into the
-  // dashboard for the newly-selected account.
-  if (next.token) {
-    localStorage.setItem(TOKEN_KEY, next.token);
-    auth.setToken(next.token);
-  }
-  setState({ user: null, profile: null, apps: [], devices: [] });
-  window.location.hash = '/';
-  window.location.reload();
 }
 
 async function handlePlatformSwitch(tab) {
@@ -98,8 +64,10 @@ function handleLogout(accounts, user) {
   if (remaining.length > 0) {
     const next = remaining[0];
     if (next.token) {
-      localStorage.setItem(TOKEN_KEY, next.token);
-      auth.setToken(next.token);
+      try {
+        localStorage.setItem('thay_homebase_token', next.token);
+        auth.setToken(next.token);
+      } catch { /* private mode */ }
     }
     setState({ user: null, profile: null, apps: [], devices: [] });
     window.location.reload();
@@ -113,7 +81,7 @@ function handleLogout(accounts, user) {
 
 function handleSignOutAll() {
   if (!window.confirm('sign out of all devices?\nthis will end all active sessions for this account.')) return;
-  writeAccounts([]);
+  clearAllAccounts();
   auth.logout().finally(() => {
     setState({ user: null, profile: null, apps: [], devices: [] });
     navigate('/login', true);
@@ -126,7 +94,7 @@ function handleSignOutAll() {
  */
 export function mountAccountDrawer(container, { open, onClose }) {
   const user = currentUser();
-  const accounts = ensureCurrentAccount(user);
+  const accounts = ensureStoredAccount(user);
   const state = getState();
   const isArchitect = !!(state.user?.isArchitect || state.profile?.isArchitect);
 
@@ -149,7 +117,7 @@ export function mountAccountDrawer(container, { open, onClose }) {
           className: 'right-panel-account' + (isActive ? ' right-panel-account--active' : ''),
           role: isActive ? 'option' : 'button',
           'aria-selected': isActive ? 'true' : 'false',
-          onClick: () => !isActive && switchToAccount(accounts, user, acc.id),
+          onClick: () => !isActive && switchAndReload(accounts, user, acc.id),
         }, [
           h('div', { className: 'right-panel-avatar', style: { background: 'var(--vibe-primary)' } }, [avatar]),
           h('div', { style: { flex: 1 } }, [
@@ -232,4 +200,3 @@ export function mountAccountDrawer(container, { open, onClose }) {
   // Keep the drawer state current after a token swap.
   container._close = close;
 }
-

@@ -5,9 +5,11 @@
  *
  * CTA behavior:
  *  - `status: 'live'`  → primary button opens the app URL.
- *  - `status: 'soon'`  → inline waitlist capture (email → /auth/waitlist
- *    with `source: <slug>`). Converts dead "coming soon" buttons into
- *    lead capture without leaving the page.
+ *  - `status: 'soon'`  → the card title links to #/app/<slug> (full landing
+ *    page with OS-specific early access), and the footer also carries an
+ *    inline waitlist capture (email → /auth/waitlist with `source: <slug>`) as
+ *    a secondary quick path. Both routes convert dead "coming soon" buttons
+ *    into real, reachable surfaces.
  */
 import { h } from '../utils/dom.js';
 import { toast } from '../utils/toast.js';
@@ -15,6 +17,7 @@ import { iconEl } from '../utils/icons.js';
 
 export function AppCard(app) {
   const isLive = app.status === 'live' || !!app.url;
+  const landingHref = `#/app/${encodeURIComponent(app.slug || app.displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'))}`;
 
   // ─── Waitlist capture (for soon/coming-soon apps) ───────────────
   const emailInput = h('input', {
@@ -65,6 +68,7 @@ export function AppCard(app) {
         }, [app.cta || 'open ↗']),
       ])
     : h('div', { className: 'catalog-card-footer catalog-card-footer--waitlist' }, [
+        h('a', { className: 'btn btn-secondary btn-sm waitlist-view-link', href: landingHref }, ['view (app) →']),
         emailInput,
         notifyBtn,
         statusEl,
@@ -72,13 +76,17 @@ export function AppCard(app) {
 
   const icon = iconEl(app, 'app-card-icon');
 
+  const title = isLive
+    ? h('div', { className: 'catalog-card-name' }, [app.displayName])
+    : h('a', { className: 'catalog-card-name catalog-card-name--link', href: landingHref }, [app.displayName]);
+
   return h('div', { className: 'catalog-card glass-card' }, [
     h('div', { className: 'catalog-card-head' }, [
       icon || h('div', { className: 'app-card-icon', style: { width: '56px', height: '56px', fontSize: '24px', flexShrink: 0 } }, [
         (app.displayName || '?').replace(/[()]/g, '')[0].toUpperCase(),
       ]),
       h('div', { className: 'catalog-card-title' }, [
-        h('div', { className: 'catalog-card-name' }, [app.displayName]),
+        title,
         app.tagline ? h('div', { className: 'catalog-card-tagline' }, [app.tagline]) : null,
       ]),
     ]),

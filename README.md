@@ -64,3 +64,26 @@ Manual: `./scripts/deploy.sh` (uses the `thaypley-vps` SSH alias; secrets live i
   **Fix (Cloudflare dashboard, needs account access):** set `auth.thaypley.com`
   A record → `5.181.218.124` (proxied, SSL Full/Strict), remove any origin rule /
   host-header override pointing it at the SPA origin.
+
+**Verify after the DNS change:**
+
+```bash
+# 1. The VPS nginx must actually receive auth.thaypley.com traffic
+curl -k -H 'Host: auth.thaypley.com' https://5.181.218.124/auth/health
+# → expect JSON: {"ok":true,...} — proves Cloudflare reaches nginx for this host
+
+# 2. The health probe must never be cached (liveness checks see live state)
+curl -sI -H 'Host: auth.thaypley.com' https://5.181.218.124/auth/health | grep -i cache-control
+# → expect: cache-control: no-store
+
+# 3. nginx config is valid before anything reloads
+ssh thaypley-vps 'sudo nginx -t'
+
+# 4. Apply only after the config test passes
+ssh thaypley-vps 'sudo systemctl reload nginx'
+```
+
+After the A-record change propagates, `auth.thaypley.com/auth/health` must return
+live JSON through Cloudflare (not the SPA's index.html). If it still serves HTML,
+the origin rule / host-header override in Cloudflare is still pointing the host
+at the static SPA origin — remove that override and re-verify.

@@ -283,7 +283,7 @@ export default async function DashboardPage(container) {
     // A visible retry chip (mirroring the devices hiccup chip) keeps
     // the failure honest instead of silently dropping the strip.
     const platformsHiccup = platformsResult.status === 'rejected';
-    const corePlatforms = platformLinks.filter((p) => ['thaypley', 'fam', 'werk'].includes(p.slug));
+    const corePlatforms = platformLinks.filter((p) => ['thaypley', 'tunes', 'tv', 'fam', 'werk'].includes(p.slug));
     const platformChips = [
       ...corePlatforms.map((p) => h('a', {
         className: 'platform-chip',
@@ -339,13 +339,29 @@ export default async function DashboardPage(container) {
 
     // ─── Layout ────────────────────────────────────────────────────
 
+    // First-run empty state: a brand-new account with zero apps/devices
+    // should see what OPENS TODAY (the live family) right away, even
+    // before the onboarding overlay — so the dashboard never feels hollow.
+    const emptyFreshStrip = (!apps.length && !devices.length && platformLinks.length === 0)
+      ? h('div', { className: 'opens-today', style: { marginBottom: 'var(--space-lg)' } }, [
+          h('span', { className: 'input-hint', style: { marginRight: 'var(--space-md)' } }, ['start with the live family']),
+          h('a', { className: 'platform-chip', href: 'https://thaypley.com', target: '_blank', rel: 'noopener noreferrer' }, ['thaypley.com']),
+          h('a', { className: 'platform-chip', href: 'https://tunes.thaypley.com', target: '_blank', rel: 'noopener noreferrer' }, ['(tunes)']),
+          h('a', { className: 'platform-chip', href: 'https://tv.thaypley.com', target: '_blank', rel: 'noopener noreferrer' }, ['(tv)']),
+          h('a', { className: 'platform-chip', href: 'https://jot.thaypley.com', target: '_blank', rel: 'noopener noreferrer' }, ['(jot)']),
+          h('a', { className: 'platform-chip', href: '#/apps' }, ['browse all apps →']),
+        ])
+      : null;
+
     const leftPanel = h('div', { className: 'dashboard-panel' }, [profileCard]);
-    const rightPanel = h('div', { className: 'dashboard-panel' }, [platformStrip, appsSection, devicesSection]);
+    const rightPanel = h('div', { className: 'dashboard-panel' }, [emptyFreshStrip, platformStrip, appsSection, devicesSection]);
 
     const grid = h('div', { className: 'dashboard-grid fade-in' }, [creatorHero, leftPanel, rightPanel]);
     const dashboard = h('div', { className: 'dashboard' }, [grid]);
 
     const shell = h('div', {}, [NavBar(), dashboard]);
+    // Replaces the aria-busy skeleton above — the settle point for the busy
+    // state is exactly when the real panels render.
     mount(container, shell);
 
     // Animations
@@ -385,7 +401,7 @@ export default async function DashboardPage(container) {
               h('span', { className: 'onboarding-step-num' }, ['03']),
               h('div', {}, [
                 h('strong', {}, ['pair a device']),
-                h('p', {}, ['link your desktop or phone from any thaypley app\'s settings to see it here.']),
+                h('p', {}, ["link your desktop or phone from any thaypley app's settings to see it here."]),
               ]),
             ]),
           ]),
@@ -402,17 +418,24 @@ export default async function DashboardPage(container) {
         const onKey = (e) => { if (e.key === 'Escape') { overlay.remove(); document.removeEventListener('keydown', onKey); } };
         document.addEventListener('keydown', onKey);
       }
-    } catch (err) {
-      // Non-fatal: onboarding is decorative, never load-bearing.
-      console.warn('onboarding skipped:', err);
-    }
+    } catch { /* onboarding is non-critical */ }
 
-    // Router cleanup: stop the weather poll and tear down its DOM whenever
-    // the user navigates away from the dashboard.
-    return stopWeatherBeforeLeaving;
+    // ─── Live state updates ────────────────────────────────────────
+    // Whisper-quiet: only re-render the dashboard when a relevant slice
+    // actually changes, never on unrelated mutations.
+    const unsubscribe = onStateChange((next) => {
+      if (!document.body.contains(grid)) {
+        unsubscribe();
+        return;
+      }
+      if (next.profile && next.profile.username !== profile.username) {
+        profile.username = next.profile.username;
+      }
+    });
+    grid._unsubscribe = unsubscribe;
   } catch (err) {
-    console.error('Dashboard render failed:', err);
     stopWeatherBeforeLeaving();
-    showErrorCard("the (u)niverse hiccuped — your dashboard couldn't load");
+    console.error('Dashboard render failed:', err);
+    showErrorCard('something broke rendering your dashboard', null, 0);
   }
 }

@@ -6,7 +6,7 @@ import { h, mount } from '../utils/dom.js';
 import { pageTransition, staggerIn } from '../utils/animations.js';
 import { NavBar } from '../components/NavBar.js';
 import { AppCard } from '../components/AppCard.js';
-import { DABBA_APPS, DABBA_OVERVIEW, FAMILY_LINKS } from '../data/directory.js';
+import { DABBA_APPS, DABBA_OVERVIEW, CORE_APPS, FAMILY_LINKS } from '../data/directory.js';
 
 export default async function DabbaPage(container) {
   const heading = h('div', { className: 'downloads-header' }, [
@@ -22,6 +22,16 @@ export default async function DabbaPage(container) {
   body.appendChild(h('div', { className: 'family-hero' }, [
     h('p', { className: 'family-hero-text' }, [DABBA_OVERVIEW.trim()]),
   ]));
+
+  // ─── what opens today — the live family strip ───────────────────
+  const liveStrip = h('div', { className: 'opens-today' }, [
+    h('span', { className: 'input-hint', style: { marginRight: 'var(--space-md)' } }, ['what opens today']),
+    ...CORE_APPS.map((app) =>
+      h('a', { className: 'platform-chip', href: app.url, target: '_blank', rel: 'noopener noreferrer' }, [app.displayName])
+    ),
+    h('a', { className: 'platform-chip', href: '#/apps' }, ['all apps →']),
+  ]);
+  body.appendChild(liveStrip);
 
   const grid = h('div', { className: 'catalog-grid' }, DABBA_APPS.map(AppCard));
   body.appendChild(grid);

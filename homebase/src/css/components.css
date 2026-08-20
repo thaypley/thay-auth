@@ -1659,3 +1659,201 @@
   font-size: var(--font-size-xs);
   letter-spacing: 0.03em;
 }
+
+/* ─── App landing pages (/app/:slug) ────────────────────────────── */
+
+.app-landing-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.app-landing-hero {
+  display: flex;
+  align-items: center;
+  gap: var(--space-lg);
+}
+
+.app-landing-icon {
+  width: 84px;
+  height: 84px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 800;
+  color: var(--vibe-primary-text);
+  background: var(--vibe-primary);
+  box-shadow: 0 0 24px var(--vibe-glow);
+  flex-shrink: 0;
+}
+
+.app-landing-titles h2 {
+  margin: 0 0 4px;
+}
+
+.app-landing-titles .subtitle {
+  margin: 0;
+}
+
+.app-landing-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.app-landing-desc {
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+}
+
+.app-landing-waitlist {
+  padding: var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  align-items: center;
+  text-align: center;
+}
+
+/* ─── OS picker (landing-page waitlist) ─────────────────────────── */
+
+.os-picker {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-full);
+  background: var(--glass);
+  border: 1px solid var(--glass-hi);
+}
+
+.os-picker-option {
+  padding: var(--space-xs) var(--space-lg);
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-full);
+  font-family: var(--font-display);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--vibe-sub);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--spring);
+}
+
+.os-picker-option:hover {
+  color: var(--vibe-text);
+}
+
+.os-picker-option--active {
+  background: var(--vibe-primary);
+  color: var(--vibe-primary-text);
+  box-shadow: 0 0 14px var(--vibe-glow);
+}
+
+.os-picker-form {
+  display: flex;
+  gap: var(--space-sm);
+  width: 100%;
+  max-width: 380px;
+}
+
+.os-picker-form .input {
+  flex: 1;
+}
+
+/* ─── what opens today strip ────────────────────────────────────── */
+
+.opens-today {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-xl);
+  border-radius: var(--radius-lg);
+  background: var(--glass);
+  border: 1px solid var(--glass-hi);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+}
+
+/* ─── add-account banner (login page) ───────────────────────────── */
+
+.add-account-banner {
+  margin: var(--space-md) 0 var(--space-lg);
+  border-left: 3px solid var(--vibe-accent);
+}
+
+.form-card--tight {
+  padding: var(--space-md) var(--space-lg);
+}
+
+.add-account-banner-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--vibe-text);
+  margin-bottom: 2px;
+}
+
+/* ─── success text (landing waitlist confirm) ───────────────────── */
+
+.success-text {
+  color: var(--vibe-accent);
+  font-weight: 600;
+}
+
+/* ─── catalog card: soon-app name links to its landing page ─────── */
+
+.catalog-card-name--link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  text-decoration: none;
+  color: var(--vibe-text);
+  transition: color var(--duration-fast) var(--spring);
+}
+
+.catalog-card-name--link:hover {
+  color: var(--vibe-accent);
+  text-decoration: underline;
+}
+
+/* ─── platform tabs: brand identities for all five surfaces ─────── */
+
+.tp-ptab--pley:hover,
+.tp-ptab--pley.tp-ptab--active {
+  color: #fad448;
+  border-color: rgba(250, 212, 72, 0.5);
+}
+
+.tp-ptab--fam:hover,
+.tp-ptab--fam.tp-ptab--active {
+  color: #f177ae;
+  border-color: rgba(241, 119, 174, 0.5);
+}
+
+.tp-ptab--werk:hover,
+.tp-ptab--werk.tp-ptab--active {
+  color: #7dd3fc;
+  border-color: rgba(125, 211, 252, 0.5);
+}
+
+.tp-ptab--tunes:hover,
+.tp-ptab--tunes.tp-ptab--active {
+  color: #b47eff;
+  border-color: rgba(180, 126, 255, 0.5);
+}
+
+.tp-ptab--tv:hover,
+.tp-ptab--tv.tp-ptab--active {
+  color: #ff9f6e;
+  border-color: rgba(255, 159, 110, 0.5);
+}
+
+/* waitlist footer: the landing-page link spans the full row above the capture */
+.catalog-card-footer--waitlist .waitlist-view-link {
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin-bottom: 2px;
+}

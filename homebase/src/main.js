@@ -6,7 +6,7 @@ import './css/tokens.css';
 import './css/base.css';
 import './css/components.css';
 import './css/sky-theme.css';
-import { route, initRouter } from './router.js';
+import { route, initRouter, getQueryParams } from './router.js';
 import { hasToken } from './sdk.js';
 import { initVibe } from './utils/vibes.js';
 import { initSky } from './utils/sky.js';
@@ -15,7 +15,7 @@ initVibe();
 initSky();
 
 // ─── Service worker: scrub Cloudflare's edge-injected analytics beacon ───
-// The beacon (<script data-cf-beacon> → static.cloudflareinsights.com) is
+// The beacon (script data-cf-beacon to static.cloudflareinsights.com) is
 // injected by Cloudflare at the edge, not by this origin. Client ad blockers
 // cancel it with ERR_BLOCKED_BY_CLIENT, and disabling Web Analytics is not
 // available on this account tier. The SW strips the injected tag from every
@@ -52,6 +52,7 @@ const BillingPage = lazy(() => import('./pages/BillingPage.js'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage.js'));
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.js'));
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.js'));
+const AppLandingPage = lazy(() => import('./pages/AppLandingPage.js'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage.js'));
 
 // ─── Route Definitions ───────────────────────────────────────────
@@ -65,7 +66,12 @@ route('/', async (container) => {
 });
 
 route('/login', async (container) => {
-  if (hasToken()) {
+  const params = getQueryParams();
+  const isAddAccount = params.get('addaccount') === '1';
+  // Add-account mode must be reachable while signed in — the drawer routes
+  // here to attach a second identity. Only plain /login bounces token-holders
+  // back to the dashboard.
+  if (hasToken() && !isAddAccount) {
     const { navigate } = await import('./router.js');
     navigate('/', true);
     return;
@@ -139,9 +145,14 @@ route('/creative', async (container) => {
   await CreativePage(container);
 });
 
-// Alias: the creator entry point — "record a song" lands here.
+// Alias: the creator entry point — 'record a song' lands here.
 route('/create', async (container) => {
   await CreativePage(container);
+});
+
+// Individual app landing pages — every catalog card links here with slug.
+route('/app/:slug', async (container, params) => {
+  await AppLandingPage(container, params && params.slug);
 });
 
 // Device management — paired devices + active sessions (auth-gated).
