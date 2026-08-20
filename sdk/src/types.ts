@@ -106,6 +106,17 @@ export interface UserApp {
 export interface ProfileUpdateData {
   username?: string;
   characteristics?: Record<string, string>;
+  /** Deep identity fields — synced across the whole thaypley family. */
+  profile?: Partial<{
+    displayName: string;
+    website: string;
+    socialLinks: string;
+    location: string;
+    vibe: string;
+    relationship_status: string;
+    relationshipVisible: boolean;
+    partnerUsername: string;
+  }>;
 }
 
 export interface WaitlistData {

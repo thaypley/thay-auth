@@ -127,6 +127,17 @@ function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
     avatar: rawAvatar ? `${rawAvatar}${rawAvatar.includes('?') ? '&' : '?'}v=${version}` : '',
     avatarVersion: version,
     birthday: record.birthday || '',
+    // Deep identity fields — thay-auth is the single source of truth.
+    // These round-trip through the shared users record so the auth portal
+    // (homebase) can render and edit them exactly like thaypley.com does.
+    displayName: record.displayName || '',
+    website: record.website || '',
+    socialLinks: record.socialLinks || '',
+    location: record.location || '',
+    vibe: record.vibe || '',
+    relationship_status: record.relationship_status || '',
+    relationshipVisible: record.relationshipVisible ?? true,
+    partnerUsername: record.partnerUsername || '',
     created: record.created,
     updated: record.updated,
   };
@@ -684,7 +695,7 @@ router.post('/waitlist', strictAuthLimit, async (req: Request, res: Response) =>
 
 router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
   try {
-    const { email, password, username, accountType, birthday, inviteCode, app } = req.body;
+    const { email, password, username, accountType, birthday, inviteCode, app, name } = req.body;
 
     const errors: string[] = [];
     const e1 = validateEmail(email);
@@ -750,6 +761,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         age,
         isVerified: false,
         tier: 'free',
+        name: (name || '').trim(),
       });
       userId = created.id;
 
@@ -771,6 +783,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         age,
         isVerified: false,
         tier: 'free',
+        name: (name || '').trim(),
       });
       userId = (created as unknown as Record<string, string>).id;
 
@@ -1196,7 +1209,22 @@ router.get('/profile', requireUser, async (req: Request, res: Response) => {
 
 router.patch('/profile', requireUser, async (req: Request, res: Response) => {
   try {
-    const { characteristics } = req.body;
+    const { characteristics, profile } = req.body;
+    const profilePatch: Record<string, string | number | boolean> = {};
+    if (profile && typeof profile === 'object') {
+      // Deep identity fields — thay-auth is the single source of truth.
+      // thaypley.com settings writes these through here so they sync across
+      // the whole family (auth portal, fam, werk, du, tunes, jot, dabba...).
+      const pick = ['displayName', 'website', 'socialLinks', 'location', 'vibe',
+        'relationship_status', 'relationshipVisible', 'partnerUsername'] as const;
+      for (const key of pick) {
+        if (typeof (profile as Record<string, unknown>)[key] === 'string') {
+          profilePatch[key] = String((profile as Record<string, unknown>)[key]).slice(0, 2000);
+        } else if (key === 'relationshipVisible' && typeof (profile as Record<string, unknown>)[key] === 'boolean') {
+          profilePatch[key] = (profile as Record<string, unknown>)[key] as boolean;
+        }
+      }
+    }
     const pb = await getAdminPb();
     const userId = req.user!.id;
 
@@ -1248,6 +1276,13 @@ router.patch('/profile', requireUser, async (req: Request, res: Response) => {
       }
     }
 
+    if (Object.keys(profilePatch).length > 0) {
+      try {
+        await pb.collection('users').update(userId, profilePatch);
+      } catch (patchErr) {
+        logger.error('/profile PATCH users update error:', patchErr);
+      }
+    }
     invalidateUserCache(userId);
     const [user, chars] = await Promise.all([getUserData(pb, userId), getCharsData(pb, userId)]);
     return res.status(200).json({

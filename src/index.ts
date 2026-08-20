@@ -8,6 +8,7 @@ import { metrics } from './utils/metrics.js';
 import { closeDirectSql } from './providers/directSqlUsers.js';
 import { closeBcryptPool } from './utils/bcrypt.js';
 import authRouter from './routes/auth.js';
+import linksRouter from './routes/links.js';
 import devicesRouter from './routes/devices.js';
 import sessionsRouter from './routes/sessions.js';
 
@@ -72,6 +73,7 @@ app.use('/auth/avatar', express.json({ limit: '6mb' }));
 app.use('/auth/webhook', express.raw({ type: () => true, limit: '64kb' }));
 app.use(express.json({ limit: '64kb' }));
 
+app.use('/auth/links', linksRouter);
 app.use('/auth', authRouter);
 app.use('/devices', devicesRouter);
 app.use('/sessions', sessionsRouter);

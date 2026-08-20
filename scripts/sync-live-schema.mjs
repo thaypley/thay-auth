@@ -281,6 +281,43 @@ async function ensureDevicesCollection(pb) {
   console.log('→ created devices collection');
 }
 
+
+async function ensureAccountLinksCollection(pb) {
+  try {
+    await pb.collections.getOne('account_links');
+    console.log('✓ account_links collection already exists — nothing to do');
+    return;
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
+  await pb.collections.create({
+    name: 'account_links',
+    type: 'base',
+    listRule: '(@request.auth.id = soulId) || (@request.auth.id = linkedId)',
+    viewRule: '(@request.auth.id = soulId) || (@request.auth.id = linkedId)',
+    createRule: '@request.auth.id != null',
+    updateRule: '(@request.auth.id = soulId) || (@request.auth.id = linkedId)',
+    deleteRule: '(@request.auth.id = soulId) || (@request.auth.id = linkedId)',
+    fields: [
+      { name: 'soulId', type: 'text', required: true },
+      { name: 'linkedId', type: 'text', required: true },
+      { name: 'relation', type: 'select', required: true, maxSelect: 1, values: ['business', 'artist_persona', 'label', 'studio', 'fan_persona', 'other'] },
+      { name: 'status', type: 'select', required: true, maxSelect: 1, values: ['pending', 'linked', 'unlinked'] },
+      { name: 'createdBy', type: 'text', required: false },
+      { name: 'note', type: 'text', required: false, max: 500 },
+      { type: 'autodate', name: 'created', onCreate: true, onUpdate: false, hidden: false },
+      { type: 'autodate', name: 'updated', onCreate: true, onUpdate: true, hidden: false },
+    ],
+    indexes: [
+      'CREATE UNIQUE INDEX idx_account_links_soul ON account_links (soulId)',
+      'CREATE UNIQUE INDEX idx_account_links_linked ON account_links (linkedId)',
+      'CREATE INDEX idx_account_links_soul_status ON account_links (soulId, status)',
+      'CREATE INDEX idx_account_links_linked_status ON account_links (linkedId, status)'
+    ],
+  });
+  console.log('→ created account_links collection');
+}
+
 async function ensureField(pb, collectionName, field, label) {
   let collection;
   try {
@@ -393,6 +430,7 @@ async function main() {
   console.log('Authenticated as admin.\n');
 
   await ensureDevicesCollection(pb);
+  await ensureAccountLinksCollection(pb);
 
   // PB ≥0.24 stores base collections without implicit `created`/`updated`
   // autodate fields (they are only auto-added to AUTH collections). The app

@@ -143,6 +143,7 @@ export interface DirectInsertInput {
   age: number;
   isVerified?: boolean;
   tier?: string;
+  name?: string;
 }
 
 export interface DirectInsertResult {
@@ -195,7 +196,7 @@ export function runOp(op: string, payload: any): any {
         verified: 0,
         emailVisibility: 0,
         avatar: '',
-        name: '',
+        name: payload.name ? String(payload.name).trim() : '',
         emailVerificationCode: '',
         emailVerificationCodeExpiry: '',
         lastUsernameChangeAt: '',

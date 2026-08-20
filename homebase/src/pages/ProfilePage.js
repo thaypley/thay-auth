@@ -143,6 +143,48 @@ export default async function ProfilePage(container) {
   });
   if (chars.bio) bioInput.value = chars.bio;
 
+  // Deep identity fields — thay-auth is the single source of truth; these live
+  // on the shared users record so every thaypley app sees them.
+  const displayNameInput = h('input', {
+    className: 'input',
+    placeholder: 'display name',
+    id: 'edit-displayname',
+    maxlength: 80,
+  });
+  if (profile.displayName) displayNameInput.value = profile.displayName;
+
+  const websiteInput = h('input', {
+    className: 'input',
+    placeholder: 'https://your.site',
+    id: 'edit-website',
+    maxlength: 2000,
+  });
+  if (profile.website) websiteInput.value = profile.website;
+
+  const locationInput = h('input', {
+    className: 'input',
+    placeholder: 'city, country',
+    id: 'edit-location',
+    maxlength: 200,
+  });
+  if (profile.location) locationInput.value = profile.location;
+
+  const relationshipInput = h('input', {
+    className: 'input',
+    placeholder: 'relationship status',
+    id: 'edit-relationship',
+    maxlength: 120,
+  });
+  if (profile.relationship_status) relationshipInput.value = profile.relationship_status;
+
+  const partnerInput = h('input', {
+    className: 'input',
+    placeholder: 'partner username',
+    id: 'edit-partner',
+    maxlength: 200,
+  });
+  if (profile.partnerUsername) partnerInput.value = profile.partnerUsername;
+
   const pronounPills = PRONOUNS.map(p => {
     const pill = h('button', {
       className: 'pill' + (chars.pronouns === p ? ' selected' : ''),
@@ -242,7 +284,16 @@ export default async function ProfilePage(container) {
           await auth.uploadAvatar(avatarFile);
           avatarFile = null;
         }
-        await auth.updateProfile({ characteristics: charsUpdate });
+        await auth.updateProfile({
+          characteristics: charsUpdate,
+          profile: {
+            displayName: displayNameInput.value.trim(),
+            website: websiteInput.value.trim(),
+            location: locationInput.value.trim(),
+            relationship_status: relationshipInput.value.trim(),
+            partnerUsername: partnerInput.value.trim(),
+          },
+        });
         const updatedProfile = await auth.getProfile();
         setState({ profile: updatedProfile });
         toast('profile updated!', 'success');
@@ -266,6 +317,26 @@ export default async function ProfilePage(container) {
     h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
       h('label', { className: 'input-label', htmlFor: 'edit-bio' }, ['bio']),
       bioInput,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
+      h('label', { className: 'input-label', htmlFor: 'edit-displayname' }, ['display name']),
+      displayNameInput,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
+      h('label', { className: 'input-label', htmlFor: 'edit-website' }, ['website']),
+      websiteInput,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
+      h('label', { className: 'input-label', htmlFor: 'edit-location' }, ['location']),
+      locationInput,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
+      h('label', { className: 'input-label', htmlFor: 'edit-relationship' }, ['relationship status']),
+      relationshipInput,
+    ]),
+    h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
+      h('label', { className: 'input-label', htmlFor: 'edit-partner' }, ['partner username']),
+      partnerInput,
     ]),
     h('div', { className: 'input-group', style: { marginTop: '16px' } }, [
       h('label', { className: 'input-label' }, ['pronouns']),
