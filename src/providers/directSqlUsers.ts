@@ -138,6 +138,7 @@ export async function createUserDirect(
     age: input.age,
     isVerified,
     tier,
+    name: input.name,
   });
 
   return {
