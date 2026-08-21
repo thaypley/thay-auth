@@ -34,12 +34,18 @@ import {
   summarizeEntitlements,
 } from '../utils/entitlements.js';
 import { BoundedQueue } from '../utils/asyncQueue.js';
+import { mustGuard } from '../utils/guardedNames.js';
 import {
   validateEmail, validatePassword, validateUsername,
   validateBirthday, validateAccountType, validateInviteCode,
   sanitizeUsername,
 } from '../utils/validate.js';
 import { escapePbFilterValue } from '../utils/filterEscape.js';
+import {
+  GUARD_NOTICE,
+  isGuardedName,
+  isGuardedEmail,
+} from '../utils/guardedNames.js';
 import LRUCache from 'lru-cache';
 
 const strictAuthLimit = rateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyPrefix: 'auth-strict' });
@@ -714,6 +720,19 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
       return res.status(400).json({ error: errors.join('; ') });
     }
 
+    // ── UaZit guarded-name lockdown ──────────────────────────────
+    // These identities can never self-register. Hard stop BEFORE any
+    // invite redemption, bcrypt work, or DB write.
+    if (isGuardedName(username) || isGuardedEmail(email)) {
+      logger.warn('guarded-name signup attempt blocked', {
+        username: sanitizeUsername(username),
+        emailDomain: String(email).split('@')[1] || '',
+        ip: req.ip,
+      });
+      metrics.inc('thay_auth_guarded_name_blocks_total', { surface: 'signup' });
+      return res.status(403).json({ error: GUARD_NOTICE, code: 'GUARDED_NAME', guarded: true });
+    }
+
     const pb = await getAdminPb();
     const code = inviteCode.toString().trim().toUpperCase();
     const escapedCode = escapePbFilterValue(code);
@@ -861,6 +880,18 @@ router.post('/login', loginLimit, async (req: Request, res: Response) => {
     const pb = createClient();
     const authData = await pb.collection('users').authWithPassword(loginIdentity, password);
     const userId = authData.record.id as string;
+
+    // ── UaZit guarded-name lockdown ──────────────────────────────
+    // Even valid credentials are refused for guarded identities unless
+    // the record carries guardApproved=true (set by UaZit as PB
+    // superuser). Checked before any session is enqueued.
+    const loginRecord = authData.record as unknown as Record<string, unknown>;
+    if (mustGuard(loginRecord)) {
+      metrics.inc('thay_auth_guarded_name_blocks_total', { surface: 'login' });
+      logger.warn('guarded-name login attempt blocked', { userId, ip: req.ip });
+      return res.status(403).json({ error: GUARD_NOTICE, code: 'GUARDED_NAME', guarded: true });
+    }
+
     enqueueSession(userId, authData.token, app, req);
 
     const record = authData.record as unknown as Record<string, unknown>;
@@ -1031,6 +1062,12 @@ router.post('/change-username', requireUser, async (req: Request, res: Response)
       }
     }
 
+    // ── UaZit guarded-name lockdown ──────────────────────────────
+    if (isGuardedName(sanitizeUsername(username))) {
+      metrics.inc('thay_auth_guarded_name_blocks_total', { surface: 'change-username' });
+      return res.status(403).json({ error: GUARD_NOTICE, code: 'GUARDED_NAME', guarded: true });
+    }
+
     const sanitizedUsername = sanitizeUsername(username);
     const updated = await pb.collection('users').update(req.user!.id, {
       username: sanitizedUsername,
@@ -1129,6 +1166,12 @@ router.get('/check-username', strictAuthLimit, async (req: Request, res: Respons
     if (!username) return res.status(400).json({ error: 'username query param required' });
     const err = validateUsername(username);
     if (err) return res.status(200).json({ available: false, error: err });
+
+    // ── UaZit guarded-name lockdown ──────────────────────────────
+    if (isGuardedName(username)) {
+      metrics.inc('thay_auth_guarded_name_blocks_total', { surface: 'check-username' });
+      return res.status(200).json({ available: false, error: GUARD_NOTICE, guarded: true });
+    }
 
     const pb = await getAdminPb();
     const escapedUsername = escapePbFilterValue(sanitizeUsername(username));

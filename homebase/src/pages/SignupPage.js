@@ -208,6 +208,11 @@ export default async function SignupPage(container) {
             usernameHint.className = 'input-hint-success';
             usernameHint.textContent = '✓ available';
             usernameAvailable = true;
+          } else if (result.guarded) {
+            // UaZit guarded-name lockdown — hard AUTHENTICATION NOTICE.
+            usernameHint.className = 'input-hint-error';
+            usernameHint.textContent = result.error;
+            usernameAvailable = false;
           } else {
             usernameHint.className = 'input-hint-error';
             usernameHint.textContent = result.error || 'username taken';
@@ -395,6 +400,10 @@ export default async function SignupPage(container) {
           navigate('/verify');
         } catch (err) {
           errorEl.textContent = err.message || 'signup failed — try again';
+          if (err.code === 'GUARDED_NAME') {
+            errorEl.style.fontWeight = '700';
+            errorEl.style.textTransform = 'uppercase';
+          }
         }
       },
     }, [
