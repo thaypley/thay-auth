@@ -109,6 +109,7 @@ function getInsertPlan(dbPath: string): { sql: string; names: string[] } | null 
         ['password', ''],
         ['tokenKey', ''],
         ['accountType', ''],
+        ['disciplines', ''],
         ['birthday', ''],
         ['age', 0],
         ['tier', ''],
@@ -139,6 +140,8 @@ export interface DirectInsertInput {
   password: string;
   username: string;
   accountType: string;
+  /** JSON-encoded discipline list (multi-discipline merge). Optional. */
+  disciplines?: string;
   birthday: string;
   age: number;
   isVerified?: boolean;
@@ -188,6 +191,7 @@ export function runOp(op: string, payload: any): any {
         password: payload.password,
         tokenKey: tk,
         accountType: payload.accountType,
+        disciplines: payload.disciplines ? String(payload.disciplines) : '',
         birthday: payload.birthday,
         age: payload.age,
         tier: payload.tier,

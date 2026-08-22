@@ -134,6 +134,7 @@ export async function createUserDirect(
     username: input.username,
     password: passwordHash,
     accountType: input.accountType,
+    disciplines: input.disciplines || '',
     birthday: input.birthday,
     age: input.age,
     isVerified,

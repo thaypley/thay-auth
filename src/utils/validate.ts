@@ -44,7 +44,9 @@ export function validateBirthday(birthday: unknown): string | null {
 }
 
 export function validateAccountType(type: unknown): string | null {
-  const valid = ['lover', 'musician', 'artist', 'content_creator', 'brand', 'vintage_reseller', 'label', 'studio'];
+  // 'creator' is canonical (migration 1779001340); 'content_creator' accepted
+  // as legacy input and canonicalized by callers.
+  const valid = ['lover', 'musician', 'artist', 'creator', 'content_creator', 'brand', 'vintage_reseller', 'label', 'studio', 'developer'];
   if (typeof type !== 'string' || !valid.includes(type)) {
     return `Invalid accountType. Must be one of: ${valid.join(', ')}`;
   }

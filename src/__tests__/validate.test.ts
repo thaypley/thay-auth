@@ -117,6 +117,7 @@ describe('validateAccountType', () => {
     expect(validateAccountType('musician')).toBeNull();
     expect(validateAccountType('artist')).toBeNull();
     expect(validateAccountType('studio')).toBeNull();
+    expect(validateAccountType('developer')).toBeNull();
   });
 
   it('rejects invalid types', () => {

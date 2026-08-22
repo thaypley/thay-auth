@@ -123,6 +123,9 @@ function sanitizeUser(record: Record<string, unknown>, emailFallback = '') {
     email: record.email || emailFallback,
     username: record.username,
     accountType: record.accountType,
+    // Multi-discipline merge: raw JSON string (or parsed list) so clients can
+    // build merged dashboards without a second round-trip.
+    disciplines: (() => { try { return JSON.parse((record.disciplines as string) || '[]'); } catch { return []; } })(),
     isVerified: record.isVerified || false,
     isArchitect: record.isArchitect || false,
     tier: record.tier || 'free',
@@ -701,7 +704,35 @@ router.post('/waitlist', strictAuthLimit, async (req: Request, res: Response) =>
 
 router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
   try {
-    const { email, password, username, accountType, birthday, inviteCode, app, name } = req.body;
+    const { email, password, username, birthday, inviteCode, app, name } = req.body;
+    // Canonicalize the creator spelling — PB users.accountType uses 'creator'
+    // since migration 1779001340; old clients may still send 'content_creator'.
+    let accountType: string = req.body.accountType === 'content_creator' ? 'creator' : String(req.body.accountType || '');
+
+    // ── multi-discipline merge (2026) ──
+    // Optional `disciplines` array: all crafts practiced under ONE moniker.
+    // Must include the primary accountType. Max 4 · each entry must be a
+    // valid type. Serialized to JSON for the users.disciplines column.
+    let disciplinesJson = '';
+    const rawDisciplines = (req.body as Record<string, unknown>).disciplines;
+    if (rawDisciplines !== undefined) {
+      if (!Array.isArray(rawDisciplines)) {
+        return res.status(400).json({ error: 'disciplines must be an array of account types' });
+      }
+      const list = Array.from(new Set((rawDisciplines as unknown[]).map(String).map((t) => t.trim()).filter(Boolean)))
+        .map((t) => (t === 'content_creator' ? 'creator' : t));
+      if (list.length > 4) {
+        return res.status(400).json({ error: 'a soul may hold at most 4 disciplines' });
+      }
+      for (const t of list) {
+        const et = validateAccountType(t);
+        if (et) { return res.status(400).json({ error: 'invalid discipline: ' + et }); }
+      }
+      if (!list.includes(String(accountType))) {
+        list.unshift(String(accountType));
+      }
+      disciplinesJson = JSON.stringify(list);
+    }
 
     const errors: string[] = [];
     const e1 = validateEmail(email);
@@ -776,6 +807,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         password,
         username: sanitizedUsername,
         accountType,
+        disciplines: disciplinesJson || JSON.stringify([accountType]),
         birthday,
         age,
         isVerified: false,
@@ -798,6 +830,7 @@ router.post('/signup', strictAuthLimit, async (req: Request, res: Response) => {
         passwordConfirm: password,
         username: sanitizedUsername,
         accountType,
+        disciplines: disciplinesJson ? JSON.parse(disciplinesJson) : [accountType],
         birthday: birthday,
         age,
         isVerified: false,
